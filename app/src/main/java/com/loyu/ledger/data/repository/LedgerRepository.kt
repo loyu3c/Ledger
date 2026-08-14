@@ -1,0 +1,64 @@
+package com.loyu.ledger.data.repository
+
+import com.loyu.ledger.data.local.AccountEntity
+import com.loyu.ledger.data.local.AccountType
+import com.loyu.ledger.data.local.CategoryEntity
+import com.loyu.ledger.data.local.LedgerDao
+import com.loyu.ledger.data.local.TransactionEntity
+import com.loyu.ledger.data.local.TransactionType
+import java.time.LocalDate
+import java.time.ZoneId
+
+class LedgerRepository(private val dao: LedgerDao) {
+    val accounts = dao.observeAccounts()
+    val categories = dao.observeCategories()
+    val transactions = dao.observeTransactions()
+
+    fun monthRangeMillis(now: LocalDate = LocalDate.now()): Pair<Long, Long> {
+        val zone = ZoneId.systemDefault()
+        val start = now.withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = now.withDayOfMonth(1).plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        return start to end
+    }
+
+    fun monthExpense(start: Long, end: Long) = dao.observeExpenseTotal(start, end)
+    fun monthIncome(start: Long, end: Long) = dao.observeIncomeTotal(start, end)
+
+    suspend fun addTransaction(
+        type: TransactionType,
+        amount: Long,
+        accountId: Long,
+        categoryId: Long,
+        merchant: String,
+        note: String,
+    ) {
+        require(amount > 0)
+        dao.insertTransaction(
+            TransactionEntity(
+                type = type,
+                amount = amount,
+                accountId = accountId,
+                categoryId = categoryId,
+                merchant = merchant.trim(),
+                note = note.trim(),
+            )
+        )
+    }
+
+    suspend fun seedDefaultsIfNeeded() {
+        if (dao.accountCount() > 0) return
+        dao.insertAccount(AccountEntity(name = "現金", type = AccountType.CASH))
+        dao.insertAccount(AccountEntity(name = "銀行帳戶", type = AccountType.BANK))
+        dao.insertAccount(AccountEntity(name = "信用卡", type = AccountType.CREDIT_CARD))
+
+        listOf(
+            CategoryEntity(name = "餐飲", type = TransactionType.EXPENSE, icon = "🍜", sortOrder = 1),
+            CategoryEntity(name = "交通", type = TransactionType.EXPENSE, icon = "🚗", sortOrder = 2),
+            CategoryEntity(name = "購物", type = TransactionType.EXPENSE, icon = "🛍️", sortOrder = 3),
+            CategoryEntity(name = "家庭", type = TransactionType.EXPENSE, icon = "🏠", sortOrder = 4),
+            CategoryEntity(name = "其他支出", type = TransactionType.EXPENSE, icon = "📦", sortOrder = 5),
+            CategoryEntity(name = "薪資", type = TransactionType.INCOME, icon = "💼", sortOrder = 1),
+            CategoryEntity(name = "其他收入", type = TransactionType.INCOME, icon = "💰", sortOrder = 2),
+        ).forEach { dao.insertCategory(it) }
+    }
+}
