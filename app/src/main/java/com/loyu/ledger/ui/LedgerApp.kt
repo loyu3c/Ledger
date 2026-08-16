@@ -28,7 +28,9 @@ fun LedgerApp(vm: LedgerViewModel) {
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Loyu 記帳") }) },
-        floatingActionButton = { ExtendedFloatingActionButton(onClick = { showAdd = true }, text = { Text("＋ 記一筆") }) },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(onClick = { showAdd = true }) { Text("＋ 記一筆") }
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),

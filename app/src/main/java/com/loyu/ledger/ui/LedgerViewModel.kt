@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class LedgerViewModel(private val repository: LedgerRepository) : ViewModel() {
-    private val (monthStart, monthEnd) = repository.monthRangeMillis()
+    private val monthRange = repository.monthRangeMillis()
+    private val monthStart = monthRange.first
+    private val monthEnd = monthRange.second
 
     val accounts = repository.accounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val categories = repository.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
