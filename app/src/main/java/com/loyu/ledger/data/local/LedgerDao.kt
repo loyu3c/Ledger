@@ -3,6 +3,7 @@ package com.loyu.ledger.data.local
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -10,6 +11,7 @@ interface LedgerDao {
     @Insert suspend fun insertAccount(account: AccountEntity): Long
     @Insert suspend fun insertCategory(category: CategoryEntity): Long
     @Insert suspend fun insertTransaction(transaction: TransactionEntity): Long
+    @Update suspend fun updateTransaction(transaction: TransactionEntity)
 
     @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id")
     fun observeAccounts(): Flow<List<AccountEntity>>
@@ -17,9 +19,15 @@ interface LedgerDao {
     @Query("SELECT * FROM categories WHERE isActive = 1 ORDER BY sortOrder, id")
     fun observeCategories(): Flow<List<CategoryEntity>>
 
+    @Query("SELECT * FROM transactions WHERE id = :id")
+    suspend fun getTransaction(id: Long): TransactionEntity?
+
+    @Query("DELETE FROM transactions WHERE id = :id")
+    suspend fun deleteTransaction(id: Long)
+
     @Query(
         """
-        SELECT t.id, t.type, t.amount, t.merchant, t.note, t.occurredAt,
+        SELECT t.id, t.type, t.amount, t.accountId, t.categoryId, t.merchant, t.note, t.occurredAt,
                a.name AS accountName, c.name AS categoryName, c.icon AS categoryIcon
         FROM transactions t
         JOIN accounts a ON a.id = t.accountId

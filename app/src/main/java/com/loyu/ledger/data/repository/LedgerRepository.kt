@@ -45,6 +45,34 @@ class LedgerRepository(private val dao: LedgerDao) {
         )
     }
 
+    suspend fun updateTransaction(
+        id: Long,
+        type: TransactionType,
+        amount: Long,
+        accountId: Long,
+        categoryId: Long,
+        merchant: String,
+        note: String,
+    ) {
+        require(amount > 0)
+        val existing = dao.getTransaction(id) ?: return
+        dao.updateTransaction(
+            existing.copy(
+                type = type,
+                amount = amount,
+                accountId = accountId,
+                categoryId = categoryId,
+                merchant = merchant.trim(),
+                note = note.trim(),
+                updatedAt = System.currentTimeMillis(),
+            )
+        )
+    }
+
+    suspend fun deleteTransaction(id: Long) {
+        dao.deleteTransaction(id)
+    }
+
     suspend fun seedDefaultsIfNeeded() {
         if (dao.accountCount() > 0) return
         dao.insertAccount(AccountEntity(name = "現金", type = AccountType.CASH))

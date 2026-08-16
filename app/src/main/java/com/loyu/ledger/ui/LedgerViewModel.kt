@@ -27,6 +27,14 @@ class LedgerViewModel(private val repository: LedgerRepository) : ViewModel() {
         viewModelScope.launch { repository.addTransaction(type, amount, accountId, categoryId, merchant, note) }
     }
 
+    fun updateTransaction(id: Long, type: TransactionType, amount: Long, accountId: Long, categoryId: Long, merchant: String, note: String) {
+        viewModelScope.launch { repository.updateTransaction(id, type, amount, accountId, categoryId, merchant, note) }
+    }
+
+    fun deleteTransaction(id: Long) {
+        viewModelScope.launch { repository.deleteTransaction(id) }
+    }
+
     class Factory(private val repository: LedgerRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = LedgerViewModel(repository) as T
