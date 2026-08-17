@@ -39,6 +39,8 @@ import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
 import com.loyu.ledger.data.local.CategoryTotal
+import com.loyu.ledger.data.local.DebtDirection
+import com.loyu.ledger.data.local.DebtEntity
 import com.loyu.ledger.data.local.TransactionRow
 import com.loyu.ledger.data.local.TransactionType
 import com.loyu.ledger.data.prefs.ThemeMode
@@ -72,12 +74,14 @@ fun LedgerApp(vm: LedgerViewModel) {
     val incomeByCategory by vm.incomeByCategory.collectAsState()
     val groqApiKey by vm.groqApiKey.collectAsState()
     val themeMode by vm.themeMode.collectAsState()
+    val debts by vm.debts.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<TransactionRow?>(null) }
     var showAccounts by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
     var showStatistics by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showDebts by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
     var selectedDay by remember(selectedMonth) { mutableStateOf<LocalDate?>(null) }
     val zone = remember { ZoneId.systemDefault() }
@@ -88,6 +92,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                 title = { Text("有魚記帳") },
                 actions = {
                     TextButton(onClick = { showStatistics = true }) { Text("統計") }
+                    TextButton(onClick = { showDebts = true }) { Text("借貸") }
                     TextButton(onClick = { showCategories = true }) { Text("分類") }
                     TextButton(onClick = { showAccounts = true }) { Text("帳戶") }
                     TextButton(onClick = { showSettings = true }) { Text("設定") }
@@ -225,6 +230,18 @@ fun LedgerApp(vm: LedgerViewModel) {
             onDismiss = { showStatistics = false },
             onPreviousMonth = { vm.previousMonth() },
             onNextMonth = { vm.nextMonth() },
+        )
+    }
+
+    if (showDebts) {
+        DebtManagementSheet(
+            debts = debts,
+            onDismiss = { showDebts = false },
+            onAdd = { direction, counterparty, amount, occurredAt, dueDate, note ->
+                vm.addDebt(direction, counterparty, amount, occurredAt, dueDate, note)
+            },
+            onSettle = { vm.settleDebt(it) },
+            onDelete = { vm.deleteDebt(it) },
         )
     }
 
@@ -660,6 +677,179 @@ private fun SettingsSheet(
             },
             dismissButton = { TextButton(onClick = { pendingImportUri = null }) { Text("取消") } },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DebtManagementSheet(
+    debts: List<DebtEntity>,
+    onDismiss: () -> Unit,
+    onAdd: (DebtDirection, String, Long, Long, Long?, String) -> Unit,
+    onSettle: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
+) {
+    var filterDirection by remember { mutableStateOf(DebtDirection.LEND) }
+    var showAddForm by remember { mutableStateOf(false) }
+    var debtPendingDelete by remember { mutableStateOf<DebtEntity?>(null) }
+    val filtered = debts.filter { it.direction == filterDirection }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("借貸", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(selected = filterDirection == DebtDirection.LEND, onClick = { filterDirection = DebtDirection.LEND }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("我借出/代墊的") }
+                SegmentedButton(selected = filterDirection == DebtDirection.BORROW, onClick = { filterDirection = DebtDirection.BORROW }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("我借入的") }
+            }
+            if (filtered.isEmpty()) {
+                Text(if (filterDirection == DebtDirection.LEND) "目前沒有借出/代墊的紀錄。" else "目前沒有借入的紀錄。")
+            } else {
+                filtered.forEach { debt ->
+                    ListItem(
+                        headlineContent = { Text(debt.counterparty) },
+                        supportingContent = {
+                            Text(
+                                buildString {
+                                    append(formatDateOnly(debt.occurredAt))
+                                    if (debt.note.isNotBlank()) append(" · ${debt.note}")
+                                    if (debt.isSettled) append(" · 已還清")
+                                }
+                            )
+                        },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    money(debt.amount),
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (debt.isSettled) Color.Unspecified else ExpenseRed,
+                                )
+                                if (!debt.isSettled) {
+                                    TextButton(onClick = { onSettle(debt.id) }) { Text("標記已還") }
+                                }
+                                TextButton(onClick = { debtPendingDelete = debt }) { Text("刪除") }
+                            }
+                        },
+                    )
+                    HorizontalDivider()
+                }
+            }
+            OutlinedButton(onClick = { showAddForm = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增借貸") }
+        }
+    }
+
+    if (showAddForm) {
+        DebtFormDialog(
+            defaultDirection = filterDirection,
+            onDismiss = { showAddForm = false },
+            onSave = { direction, counterparty, amount, occurredAt, dueDate, note ->
+                onAdd(direction, counterparty, amount, occurredAt, dueDate, note)
+                showAddForm = false
+            },
+        )
+    }
+
+    debtPendingDelete?.let { debt ->
+        AlertDialog(
+            onDismissRequest = { debtPendingDelete = null },
+            title = { Text("刪除這筆借貸紀錄？") },
+            text = { Text("刪除後無法復原。") },
+            confirmButton = { TextButton(onClick = { onDelete(debt.id); debtPendingDelete = null }) { Text("刪除") } },
+            dismissButton = { TextButton(onClick = { debtPendingDelete = null }) { Text("取消") } },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DebtFormDialog(
+    defaultDirection: DebtDirection,
+    onDismiss: () -> Unit,
+    onSave: (DebtDirection, String, Long, Long, Long?, String) -> Unit,
+) {
+    var direction by remember { mutableStateOf(defaultDirection) }
+    var counterparty by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var occurredAtMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var showDatePicker by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("新增借貸", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(selected = direction == DebtDirection.LEND, onClick = { direction = DebtDirection.LEND }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("借出/代墊") }
+                SegmentedButton(selected = direction == DebtDirection.BORROW, onClick = { direction = DebtDirection.BORROW }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("借入") }
+            }
+            OutlinedTextField(
+                value = counterparty,
+                onValueChange = { counterparty = it },
+                label = { Text("對象") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = amountText,
+                onValueChange = { amountText = it.filter(Char::isDigit) },
+                label = { Text("金額") },
+                prefix = { Text("NT$ ") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("日期：${formatDateOnly(occurredAtMillis)}")
+            }
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                label = { Text("備註") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("取消") }
+                Button(
+                    onClick = {
+                        val amount = amountText.toLongOrNull() ?: return@Button
+                        onSave(direction, counterparty.trim(), amount, occurredAtMillis, null, note.trim())
+                    },
+                    enabled = counterparty.isNotBlank() && (amountText.toLongOrNull() ?: 0) > 0,
+                    modifier = Modifier.weight(1f),
+                ) { Text("儲存") }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = occurredAtMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { pickedUtcMillis ->
+                        val pickedDate = Instant.ofEpochMilli(pickedUtcMillis).atZone(ZoneOffset.UTC).toLocalDate()
+                        val existingTime = Instant.ofEpochMilli(occurredAtMillis).atZone(ZoneId.systemDefault()).toLocalTime()
+                        occurredAtMillis = pickedDate.atTime(existingTime).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    }
+                    showDatePicker = false
+                }) { Text("確定") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("取消") } },
+        ) {
+            DatePicker(state = datePickerState)
+        }
     }
 }
 

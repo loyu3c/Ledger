@@ -9,6 +9,8 @@ enum class TransactionType { EXPENSE, INCOME }
 
 enum class AccountType { CASH, BANK, CREDIT_CARD, E_WALLET }
 
+enum class DebtDirection { LEND, BORROW }
+
 @Entity(tableName = "accounts")
 data class AccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -57,6 +59,19 @@ data class TransactionEntity(
     val occurredAt: Long = System.currentTimeMillis(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "debts")
+data class DebtEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val direction: DebtDirection,
+    val counterparty: String,
+    val amount: Long,
+    val occurredAt: Long = System.currentTimeMillis(),
+    val dueDate: Long? = null,
+    val note: String = "",
+    val isSettled: Boolean = false,
+    val settledAt: Long? = null,
 )
 
 data class TransactionRow(

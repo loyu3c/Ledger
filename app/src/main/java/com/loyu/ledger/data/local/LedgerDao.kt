@@ -15,6 +15,8 @@ interface LedgerDao {
     @Insert suspend fun insertAccounts(accounts: List<AccountEntity>)
     @Insert suspend fun insertCategories(categories: List<CategoryEntity>)
     @Insert suspend fun insertTransactions(transactions: List<TransactionEntity>)
+    @Insert suspend fun insertDebt(debt: DebtEntity): Long
+    @Insert suspend fun insertDebts(debts: List<DebtEntity>)
     @Update suspend fun updateTransaction(transaction: TransactionEntity)
     @Update suspend fun updateAccount(account: AccountEntity)
     @Update suspend fun updateCategory(category: CategoryEntity)
@@ -22,24 +24,38 @@ interface LedgerDao {
     @Query("SELECT * FROM accounts") suspend fun getAllAccountsOnce(): List<AccountEntity>
     @Query("SELECT * FROM categories") suspend fun getAllCategoriesOnce(): List<CategoryEntity>
     @Query("SELECT * FROM transactions") suspend fun getAllTransactionsOnce(): List<TransactionEntity>
+    @Query("SELECT * FROM debts") suspend fun getAllDebtsOnce(): List<DebtEntity>
 
     @Query("DELETE FROM transactions") suspend fun deleteAllTransactions()
     @Query("DELETE FROM accounts") suspend fun deleteAllAccounts()
     @Query("DELETE FROM categories") suspend fun deleteAllCategories()
+    @Query("DELETE FROM debts") suspend fun deleteAllDebts()
 
     @Transaction
     suspend fun replaceAllData(
         accounts: List<AccountEntity>,
         categories: List<CategoryEntity>,
         transactions: List<TransactionEntity>,
+        debts: List<DebtEntity>,
     ) {
         deleteAllTransactions()
+        deleteAllDebts()
         deleteAllAccounts()
         deleteAllCategories()
         insertAccounts(accounts)
         insertCategories(categories)
         insertTransactions(transactions)
+        insertDebts(debts)
     }
+
+    @Query("SELECT * FROM debts ORDER BY isSettled ASC, occurredAt DESC")
+    fun observeDebts(): Flow<List<DebtEntity>>
+
+    @Query("UPDATE debts SET isSettled = 1, settledAt = :settledAt WHERE id = :id")
+    suspend fun markDebtSettled(id: Long, settledAt: Long)
+
+    @Query("DELETE FROM debts WHERE id = :id")
+    suspend fun deleteDebt(id: Long)
 
     @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id")
     fun observeAccounts(): Flow<List<AccountEntity>>
