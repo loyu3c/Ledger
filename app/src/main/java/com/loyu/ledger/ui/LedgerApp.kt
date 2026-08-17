@@ -123,9 +123,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                 if (day == null) {
                     item { Text("點選上方日期查看當天的收支明細。") }
                 } else {
-                    val dayTransactions = remember(transactions, day) {
-                        transactions.filter { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() == day }
-                    }
+                    val dayTransactions = transactions.filter { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() == day }
                     val dayExpense = dayTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
                     val dayIncome = dayTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
                     item {
