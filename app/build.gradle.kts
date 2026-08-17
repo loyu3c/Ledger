@@ -16,6 +16,18 @@ android {
         versionName = "0.1.0"
     }
 
+    signingConfigs {
+        // Pinned so every CI build shares one signature; without this, CI's
+        // auto-generated debug keystore differs run to run and Android
+        // refuses to install an update over a differently-signed APK.
+        named("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildFeatures { compose = true }
 
     compileOptions {

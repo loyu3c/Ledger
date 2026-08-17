@@ -13,6 +13,7 @@ class LedgerRepository(private val dao: LedgerDao) {
     val accounts = dao.observeAccounts()
     val allAccounts = dao.observeAllAccounts()
     val categories = dao.observeCategories()
+    val allCategories = dao.observeAllCategories()
     val transactions = dao.observeTransactions()
 
     fun monthRangeMillis(now: LocalDate = LocalDate.now()): Pair<Long, Long> {
@@ -24,6 +25,7 @@ class LedgerRepository(private val dao: LedgerDao) {
 
     fun monthExpense(start: Long, end: Long) = dao.observeExpenseTotal(start, end)
     fun monthIncome(start: Long, end: Long) = dao.observeIncomeTotal(start, end)
+    fun transactionsInRange(start: Long, end: Long) = dao.observeTransactionsInRange(start, end)
 
     suspend fun addTransaction(
         type: TransactionType,
@@ -88,6 +90,22 @@ class LedgerRepository(private val dao: LedgerDao) {
     suspend fun setAccountActive(id: Long, isActive: Boolean) {
         val existing = dao.getAccount(id) ?: return
         dao.updateAccount(existing.copy(isActive = isActive))
+    }
+
+    suspend fun addCategory(name: String, type: TransactionType, icon: String) {
+        require(name.isNotBlank())
+        dao.insertCategory(CategoryEntity(name = name.trim(), type = type, icon = icon.ifBlank { "💰" }))
+    }
+
+    suspend fun updateCategory(id: Long, name: String, type: TransactionType, icon: String) {
+        require(name.isNotBlank())
+        val existing = dao.getCategory(id) ?: return
+        dao.updateCategory(existing.copy(name = name.trim(), type = type, icon = icon.ifBlank { "💰" }))
+    }
+
+    suspend fun setCategoryActive(id: Long, isActive: Boolean) {
+        val existing = dao.getCategory(id) ?: return
+        dao.updateCategory(existing.copy(isActive = isActive))
     }
 
     suspend fun seedDefaultsIfNeeded() {
