@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.TransactionType
+import com.loyu.ledger.data.prefs.SettingsRepository
+import com.loyu.ledger.data.remote.GroqClient
+import com.loyu.ledger.data.remote.VoiceTransactionResult
 import com.loyu.ledger.data.repository.LedgerRepository
 import java.time.LocalDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -17,9 +20,15 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class LedgerViewModel(private val repository: LedgerRepository) : ViewModel() {
+class LedgerViewModel(
+    private val repository: LedgerRepository,
+    private val settingsRepository: SettingsRepository,
+) : ViewModel() {
     private val _selectedMonth = MutableStateFlow(LocalDate.now().withDayOfMonth(1))
     val selectedMonth: StateFlow<LocalDate> = _selectedMonth.asStateFlow()
+
+    private val _groqApiKey = MutableStateFlow(settingsRepository.getGroqApiKey())
+    val groqApiKey: StateFlow<String> = _groqApiKey.asStateFlow()
 
     val accounts = repository.accounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val allAccounts = repository.allAccounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -61,12 +70,12 @@ class LedgerViewModel(private val repository: LedgerRepository) : ViewModel() {
         _selectedMonth.value = _selectedMonth.value.plusMonths(1)
     }
 
-    fun addTransaction(type: TransactionType, amount: Long, accountId: Long, categoryId: Long, merchant: String, note: String) {
-        viewModelScope.launch { repository.addTransaction(type, amount, accountId, categoryId, merchant, note) }
+    fun addTransaction(type: TransactionType, amount: Long, accountId: Long, categoryId: Long, merchant: String, note: String, occurredAt: Long) {
+        viewModelScope.launch { repository.addTransaction(type, amount, accountId, categoryId, merchant, note, occurredAt) }
     }
 
-    fun updateTransaction(id: Long, type: TransactionType, amount: Long, accountId: Long, categoryId: Long, merchant: String, note: String) {
-        viewModelScope.launch { repository.updateTransaction(id, type, amount, accountId, categoryId, merchant, note) }
+    fun updateTransaction(id: Long, type: TransactionType, amount: Long, accountId: Long, categoryId: Long, merchant: String, note: String, occurredAt: Long) {
+        viewModelScope.launch { repository.updateTransaction(id, type, amount, accountId, categoryId, merchant, note, occurredAt) }
     }
 
     fun deleteTransaction(id: Long) {
@@ -97,8 +106,20 @@ class LedgerViewModel(private val repository: LedgerRepository) : ViewModel() {
         viewModelScope.launch { repository.setCategoryActive(id, isActive) }
     }
 
-    class Factory(private val repository: LedgerRepository) : ViewModelProvider.Factory {
+    fun setGroqApiKey(key: String) {
+        settingsRepository.setGroqApiKey(key)
+        _groqApiKey.value = key
+    }
+
+    suspend fun parseVoiceTransaction(spokenText: String, categoryNames: List<String>): VoiceTransactionResult? {
+        return GroqClient(_groqApiKey.value).parseTransaction(spokenText, categoryNames)
+    }
+
+    class Factory(
+        private val repository: LedgerRepository,
+        private val settingsRepository: SettingsRepository,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = LedgerViewModel(repository) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = LedgerViewModel(repository, settingsRepository) as T
     }
 }
