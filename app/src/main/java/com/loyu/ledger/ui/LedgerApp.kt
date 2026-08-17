@@ -123,12 +123,18 @@ fun LedgerApp(vm: LedgerViewModel) {
                 }
             } else {
                 item {
-                    val activeDays = remember(transactions) {
-                        transactions.map { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }.toSet()
+                    val incomeDays = remember(transactions) {
+                        transactions.filter { it.type == TransactionType.INCOME }
+                            .map { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }.toSet()
+                    }
+                    val expenseDays = remember(transactions) {
+                        transactions.filter { it.type == TransactionType.EXPENSE }
+                            .map { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }.toSet()
                     }
                     MonthCalendar(
                         month = selectedMonth,
-                        activeDays = activeDays,
+                        incomeDays = incomeDays,
+                        expenseDays = expenseDays,
                         selectedDay = selectedDay,
                         onSelectDay = { selectedDay = it },
                     )
@@ -247,6 +253,9 @@ private fun SummaryLine(label: String, value: String, bold: Boolean = false) {
     }
 }
 
+private val IncomeGreen = Color(0xFF2E7D32)
+private val ExpenseRed = Color(0xFFC62828)
+
 @Composable
 private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
     ListItem(
@@ -255,7 +264,8 @@ private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
         supportingContent = { Text("${row.categoryIcon} ${row.categoryName} · ${row.accountName} · ${formatDate(row.occurredAt)}") },
         trailingContent = {
             val prefix = if (row.type == TransactionType.EXPENSE) "-" else "+"
-            Text("$prefix${money(row.amount)}", fontWeight = FontWeight.SemiBold)
+            val color = if (row.type == TransactionType.INCOME) IncomeGreen else Color.Unspecified
+            Text("$prefix${money(row.amount)}", fontWeight = FontWeight.SemiBold, color = color)
         },
     )
 }
@@ -265,7 +275,8 @@ private val weekdayLabels = listOf("日", "一", "二", "三", "四", "五", "�
 @Composable
 private fun MonthCalendar(
     month: LocalDate,
-    activeDays: Set<LocalDate>,
+    incomeDays: Set<LocalDate>,
+    expenseDays: Set<LocalDate>,
     selectedDay: LocalDate?,
     onSelectDay: (LocalDate) -> Unit,
 ) {
@@ -307,13 +318,10 @@ private fun MonthCalendar(
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Text("$dayNumber", style = MaterialTheme.typography.bodyMedium)
-                                Box(
-                                    Modifier.size(4.dp)
-                                        .background(
-                                            if (date in activeDays) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                            CircleShape,
-                                        )
-                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Box(Modifier.size(4.dp).background(if (date in incomeDays) IncomeGreen else Color.Transparent, CircleShape))
+                                    Box(Modifier.size(4.dp).background(if (date in expenseDays) ExpenseRed else Color.Transparent, CircleShape))
+                                }
                             }
                         }
                     }
