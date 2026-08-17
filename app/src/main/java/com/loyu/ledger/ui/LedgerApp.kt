@@ -119,7 +119,7 @@ fun LedgerApp(vm: LedgerViewModel) {
 
             if (viewMode == ViewMode.LIST) {
                 item {
-                    SummaryCard(income = income, expense = expense)
+                    SummaryRow(income = income, expense = expense)
                 }
                 item { Text("交易紀錄", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
                 if (transactions.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
@@ -159,7 +159,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                             fontWeight = FontWeight.Bold,
                         )
                         Spacer(Modifier.height(8.dp))
-                        DaySummaryRow(income = dayIncome, expense = dayExpense)
+                        SummaryRow(income = dayIncome, expense = dayExpense)
                     }
                     if (dayTransactions.isEmpty()) {
                         item { Text("這天還沒有紀錄。") }
@@ -240,27 +240,7 @@ fun LedgerApp(vm: LedgerViewModel) {
 }
 
 @Composable
-private fun SummaryCard(income: Long, expense: Long) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryLine("收入", money(income))
-            SummaryLine("支出", money(expense))
-            HorizontalDivider()
-            SummaryLine("結餘", money(income - expense), bold = true)
-        }
-    }
-}
-
-@Composable
-private fun SummaryLine(label: String, value: String, bold: Boolean = false) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label)
-        Text(value, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
-    }
-}
-
-@Composable
-private fun DaySummaryRow(income: Long, expense: Long) {
+private fun SummaryRow(income: Long, expense: Long) {
     Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
