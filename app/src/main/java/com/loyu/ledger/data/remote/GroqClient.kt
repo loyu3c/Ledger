@@ -1,5 +1,6 @@
 package com.loyu.ledger.data.remote
 
+import android.util.Log
 import com.loyu.ledger.data.local.TransactionType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,7 +30,7 @@ class GroqClient(private val apiKey: String) {
         return withContext(Dispatchers.IO) {
             try {
                 val requestBody = JSONObject().apply {
-                    put("model", "llama-3.1-8b-instant")
+                    put("model", "openai/gpt-oss-20b")
                     put("temperature", 0.2)
                     put("response_format", JSONObject().put("type", "json_object"))
                     put(
@@ -51,7 +52,11 @@ class GroqClient(private val apiKey: String) {
 
                 OutputStreamWriter(connection.outputStream).use { it.write(requestBody.toString()) }
 
-                if (connection.responseCode !in 200..299) return@withContext null
+                if (connection.responseCode !in 200..299) {
+                    val errorBody = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                    Log.w(TAG, "Groq API returned ${connection.responseCode}: $errorBody")
+                    return@withContext null
+                }
 
                 val responseText = connection.inputStream.bufferedReader().use { it.readText() }
                 val content = JSONObject(responseText)
@@ -73,6 +78,7 @@ class GroqClient(private val apiKey: String) {
                     note = parsed.optString("note"),
                 )
             } catch (e: Exception) {
+                Log.w(TAG, "Groq voice parsing failed", e)
                 null
             }
         }
@@ -86,6 +92,7 @@ class GroqClient(private val apiKey: String) {
     """.trimIndent()
 
     companion object {
+        private const val TAG = "GroqClient"
         private const val ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
     }
 }
