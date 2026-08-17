@@ -125,17 +125,15 @@ fun LedgerApp(vm: LedgerViewModel) {
                 }
             }
 
-            val monthDebts = remember(debts, selectedMonth, zone) {
-                val start = selectedMonth.withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
-                val end = selectedMonth.withDayOfMonth(1).plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
-                debts.filter { it.occurredAt in start until end }
-            }
+            val monthStart = selectedMonth.withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val monthEnd = selectedMonth.withDayOfMonth(1).plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val monthDebts = debts.filter { it.occurredAt in monthStart until monthEnd }
 
             if (viewMode == ViewMode.LIST) {
                 item {
                     SummaryRow(income = income, expense = expense)
                 }
-                val timeline = remember(transactions, monthDebts) { buildTimeline(transactions, monthDebts) }
+                val timeline = buildTimeline(transactions, monthDebts)
                 if (timeline.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
                 items(timeline, key = { it.key }) { entry ->
                     TimelineListItem(entry = entry, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
@@ -174,7 +172,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                     item {
                         SummaryRow(income = dayIncome, expense = dayExpense)
                     }
-                    val dayTimeline = remember(dayTransactions, dayDebts) { buildTimeline(dayTransactions, dayDebts) }
+                    val dayTimeline = buildTimeline(dayTransactions, dayDebts)
                     if (dayTimeline.isEmpty()) {
                         item { Text("這天還沒有紀錄。") }
                     } else {
