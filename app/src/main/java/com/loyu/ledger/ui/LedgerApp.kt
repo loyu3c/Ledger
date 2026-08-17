@@ -121,7 +121,6 @@ fun LedgerApp(vm: LedgerViewModel) {
                 item {
                     SummaryRow(income = income, expense = expense)
                 }
-                item { Text("交易紀錄", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
                 if (transactions.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
                 items(transactions, key = { it.id }) { row ->
                     TransactionListItem(row = row, onClick = { editingRow = row })
@@ -153,12 +152,6 @@ fun LedgerApp(vm: LedgerViewModel) {
                     val dayExpense = dayTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
                     val dayIncome = dayTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
                     item {
-                        Text(
-                            "${day.monthValue}/${day.dayOfMonth} 明細",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(Modifier.height(8.dp))
                         SummaryRow(income = dayIncome, expense = dayExpense)
                     }
                     if (dayTransactions.isEmpty()) {
@@ -227,6 +220,8 @@ fun LedgerApp(vm: LedgerViewModel) {
             expenseByCategory = expenseByCategory,
             incomeByCategory = incomeByCategory,
             onDismiss = { showStatistics = false },
+            onPreviousMonth = { vm.previousMonth() },
+            onNextMonth = { vm.nextMonth() },
         )
     }
 
@@ -760,6 +755,8 @@ private fun StatisticsSheet(
     expenseByCategory: List<CategoryTotal>,
     incomeByCategory: List<CategoryTotal>,
     onDismiss: () -> Unit,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
 ) {
     var type by remember { mutableStateOf(TransactionType.EXPENSE) }
     val data = if (type == TransactionType.EXPENSE) expenseByCategory else incomeByCategory
@@ -774,7 +771,15 @@ private fun StatisticsSheet(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("$monthLabel 統計", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onPreviousMonth) { Text("‹ 上個月") }
+                Text("$monthLabel 統計", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                TextButton(onClick = onNextMonth) { Text("下個月 ›") }
+            }
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(selected = type == TransactionType.EXPENSE, onClick = { type = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
                 SegmentedButton(selected = type == TransactionType.INCOME, onClick = { type = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
