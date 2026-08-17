@@ -94,8 +94,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                 title = { Text("有魚記帳") },
                 actions = {
                     TextButton(onClick = { showStatistics = true }) { Text("統計") }
-                    TextButton(onClick = { showCategories = true }) { Text("分類") }
-                    TextButton(onClick = { showAccounts = true }) { Text("帳戶") }
+                    TextButton(onClick = { showDebts = true }) { Text("借貸") }
                     TextButton(onClick = { showSettings = true }) { Text("設定") }
                 },
             )
@@ -293,6 +292,8 @@ fun LedgerApp(vm: LedgerViewModel) {
             onThemeModeChange = { vm.setThemeMode(it) },
             onExportBackup = { vm.exportBackup() },
             onImportBackup = { vm.importBackup(it) },
+            onOpenAccounts = { showSettings = false; showAccounts = true },
+            onOpenCategories = { showSettings = false; showCategories = true },
         )
     }
 }
@@ -641,6 +642,8 @@ private fun SettingsSheet(
     onThemeModeChange: (ThemeMode) -> Unit,
     onExportBackup: suspend () -> String,
     onImportBackup: suspend (String) -> Unit,
+    onOpenAccounts: () -> Unit,
+    onOpenCategories: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -700,6 +703,16 @@ private fun SettingsSheet(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Button(onClick = { onSaveApiKey(apiKey.trim()) }, modifier = Modifier.align(Alignment.End)) { Text("儲存") }
+            }
+
+            HorizontalDivider()
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("資料管理", fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onOpenAccounts, modifier = Modifier.weight(1f)) { Text("帳戶管理") }
+                    OutlinedButton(onClick = onOpenCategories, modifier = Modifier.weight(1f)) { Text("分類管理") }
+                }
             }
 
             HorizontalDivider()
