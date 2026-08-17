@@ -360,6 +360,7 @@ private fun TransactionSheet(
     var note by remember { mutableStateOf(existing?.note ?: "") }
     var occurredAtMillis by remember { mutableStateOf(existing?.occurredAt ?: System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
+    var showInvoiceScanner by remember { mutableStateOf(false) }
     var voiceProcessing by remember { mutableStateOf(false) }
     val filteredCategories = categories.filter { it.type == type }
     var accountId by remember(accounts) { mutableStateOf(existing?.accountId ?: accounts.firstOrNull()?.id) }
@@ -401,22 +402,27 @@ private fun TransactionSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(if (existing == null) "新增記帳" else "編輯記帳", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            OutlinedButton(
-                onClick = {
-                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-TW")
-                        putExtra(RecognizerIntent.EXTRA_PROMPT, "說出這筆記帳的內容")
-                    }
-                    if (intent.resolveActivity(context.packageManager) != null) {
-                        speechLauncher.launch(intent)
-                    } else {
-                        Toast.makeText(context, "找不到可用的語音輸入服務", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                enabled = !voiceProcessing,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (voiceProcessing) "辨識中…" else "🎤 語音輸入") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-TW")
+                            putExtra(RecognizerIntent.EXTRA_PROMPT, "說出這筆記帳的內容")
+                        }
+                        if (intent.resolveActivity(context.packageManager) != null) {
+                            speechLauncher.launch(intent)
+                        } else {
+                            Toast.makeText(context, "找不到可用的語音輸入服務", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !voiceProcessing,
+                    modifier = Modifier.weight(1f),
+                ) { Text(if (voiceProcessing) "辨識中…" else "🎤 語音輸入") }
+                OutlinedButton(onClick = { showInvoiceScanner = true }, modifier = Modifier.weight(1f)) {
+                    Text("📷 掃發票")
+                }
+            }
             OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("日期：${formatDateOnly(occurredAtMillis)}")
             }
@@ -500,6 +506,21 @@ private fun TransactionSheet(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    if (showInvoiceScanner) {
+        InvoiceScannerDialog(
+            onDismiss = { showInvoiceScanner = false },
+            onScanned = { invoice ->
+                showInvoiceScanner = false
+                amountText = invoice.totalAmount.toString()
+                val existingTime = Instant.ofEpochMilli(occurredAtMillis).atZone(ZoneId.systemDefault()).toLocalTime()
+                occurredAtMillis = invoice.date.atTime(existingTime).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val itemsText = invoice.items.joinToString("、") { "${it.name} x${it.quantity}" }
+                val invoiceNote = if (itemsText.isNotBlank()) "統編:${invoice.sellerId} $itemsText" else "統編:${invoice.sellerId}"
+                note = if (note.isBlank()) invoiceNote else "$note $invoiceNote"
+            },
+        )
     }
 }
 
