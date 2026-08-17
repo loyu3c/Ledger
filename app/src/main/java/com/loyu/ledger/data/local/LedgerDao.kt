@@ -70,6 +70,18 @@ interface LedgerDao {
     @Query("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'INCOME' AND occurredAt >= :start AND occurredAt < :end")
     fun observeIncomeTotal(start: Long, end: Long): Flow<Long>
 
+    @Query(
+        """
+        SELECT c.id AS categoryId, c.name AS categoryName, c.icon AS categoryIcon, SUM(t.amount) AS total
+        FROM transactions t
+        JOIN categories c ON c.id = t.categoryId
+        WHERE t.type = :type AND t.occurredAt >= :start AND t.occurredAt < :end
+        GROUP BY c.id
+        ORDER BY total DESC
+        """
+    )
+    fun observeCategoryTotals(type: TransactionType, start: Long, end: Long): Flow<List<CategoryTotal>>
+
     @Query("SELECT COUNT(*) FROM accounts")
     suspend fun accountCount(): Int
 }

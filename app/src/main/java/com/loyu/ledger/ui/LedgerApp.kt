@@ -1,22 +1,29 @@
 package com.loyu.ledger.ui
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
+import com.loyu.ledger.data.local.CategoryTotal
 import com.loyu.ledger.data.local.TransactionRow
 import com.loyu.ledger.data.local.TransactionType
 import java.text.NumberFormat
@@ -36,16 +43,20 @@ fun LedgerApp(vm: LedgerViewModel) {
     val expense by vm.monthExpense.collectAsState()
     val income by vm.monthIncome.collectAsState()
     val selectedMonth by vm.selectedMonth.collectAsState()
+    val expenseByCategory by vm.expenseByCategory.collectAsState()
+    val incomeByCategory by vm.incomeByCategory.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<TransactionRow?>(null) }
     var showAccounts by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
+    var showStatistics by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Loyu 記帳") },
                 actions = {
+                    TextButton(onClick = { showStatistics = true }) { Text("統計") }
                     TextButton(onClick = { showCategories = true }) { Text("分類") }
                     TextButton(onClick = { showAccounts = true }) { Text("帳戶") }
                 },
@@ -133,6 +144,15 @@ fun LedgerApp(vm: LedgerViewModel) {
             onAdd = { name, type, icon -> vm.addCategory(name, type, icon) },
             onEdit = { id, name, type, icon -> vm.updateCategory(id, name, type, icon) },
             onToggleActive = { id, isActive -> vm.setCategoryActive(id, isActive) },
+        )
+    }
+
+    if (showStatistics) {
+        StatisticsSheet(
+            monthLabel = monthLabel(selectedMonth),
+            expenseByCategory = expenseByCategory,
+            incomeByCategory = incomeByCategory,
+            onDismiss = { showStatistics = false },
         )
     }
 }
@@ -433,6 +453,79 @@ private fun CategoryFormDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StatisticsSheet(
+    monthLabel: String,
+    expenseByCategory: List<CategoryTotal>,
+    incomeByCategory: List<CategoryTotal>,
+    onDismiss: () -> Unit,
+) {
+    var type by remember { mutableStateOf(TransactionType.EXPENSE) }
+    val data = if (type == TransactionType.EXPENSE) expenseByCategory else incomeByCategory
+    val total = data.sumOf { it.total }.coerceAtLeast(1)
+    val colors = chartColors(data.size)
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("$monthLabel 統計", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(selected = type == TransactionType.EXPENSE, onClick = { type = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
+                SegmentedButton(selected = type == TransactionType.INCOME, onClick = { type = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
+            }
+            if (data.isEmpty()) {
+                Text(if (type == TransactionType.EXPENSE) "這個月還沒有支出紀錄。" else "這個月還沒有收入紀錄。")
+            } else {
+                Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                    CategoryPieChart(data = data, colors = colors, modifier = Modifier.size(180.dp))
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    data.forEachIndexed { index, item ->
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(10.dp).background(colors[index], CircleShape))
+                            Spacer(Modifier.width(8.dp))
+                            Text("${item.categoryIcon} ${item.categoryName}", modifier = Modifier.weight(1f))
+                            Text("${money(item.total)} · ${item.total * 100 / total}%", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryPieChart(data: List<CategoryTotal>, colors: List<Color>, modifier: Modifier = Modifier) {
+    val total = data.sumOf { it.total }.coerceAtLeast(1)
+    Canvas(modifier) {
+        val strokeWidth = size.minDimension * 0.28f
+        var startAngle = -90f
+        data.forEachIndexed { index, item ->
+            val sweep = 360f * item.total / total
+            drawArc(
+                color = colors[index],
+                startAngle = startAngle,
+                sweepAngle = sweep.coerceAtLeast(0.5f),
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Butt),
+            )
+            startAngle += sweep
+        }
+    }
+}
+
+private val chartPalette = listOf(
+    Color(0xFF6750A4), Color(0xFF00696D), Color(0xFFB3261E), Color(0xFF7D5260),
+    Color(0xFF386A20), Color(0xFF8C4A00), Color(0xFF31628E), Color(0xFF6E5A00),
+)
+private fun chartColors(count: Int): List<Color> = List(count) { chartPalette[it % chartPalette.size] }
 
 private val monthLabelFormatter = DateTimeFormatter.ofPattern("yyyy年MM月", Locale.TAIWAN)
 private fun monthLabel(month: LocalDate): String = month.format(monthLabelFormatter)

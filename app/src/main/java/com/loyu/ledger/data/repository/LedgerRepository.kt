@@ -26,6 +26,7 @@ class LedgerRepository(private val dao: LedgerDao) {
     fun monthExpense(start: Long, end: Long) = dao.observeExpenseTotal(start, end)
     fun monthIncome(start: Long, end: Long) = dao.observeIncomeTotal(start, end)
     fun transactionsInRange(start: Long, end: Long) = dao.observeTransactionsInRange(start, end)
+    fun categoryTotals(type: TransactionType, start: Long, end: Long) = dao.observeCategoryTotals(type, start, end)
 
     suspend fun addTransaction(
         type: TransactionType,
