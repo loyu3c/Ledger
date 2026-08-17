@@ -13,6 +13,7 @@ interface LedgerDao {
     @Insert suspend fun insertTransaction(transaction: TransactionEntity): Long
     @Update suspend fun updateTransaction(transaction: TransactionEntity)
     @Update suspend fun updateAccount(account: AccountEntity)
+    @Update suspend fun updateCategory(category: CategoryEntity)
 
     @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id")
     fun observeAccounts(): Flow<List<AccountEntity>>
@@ -25,6 +26,12 @@ interface LedgerDao {
 
     @Query("SELECT * FROM categories WHERE isActive = 1 ORDER BY sortOrder, id")
     fun observeCategories(): Flow<List<CategoryEntity>>
+
+    @Query("SELECT * FROM categories ORDER BY isActive DESC, type, sortOrder, id")
+    fun observeAllCategories(): Flow<List<CategoryEntity>>
+
+    @Query("SELECT * FROM categories WHERE id = :id")
+    suspend fun getCategory(id: Long): CategoryEntity?
 
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getTransaction(id: Long): TransactionEntity?
@@ -43,6 +50,19 @@ interface LedgerDao {
         """
     )
     fun observeTransactions(): Flow<List<TransactionRow>>
+
+    @Query(
+        """
+        SELECT t.id, t.type, t.amount, t.accountId, t.categoryId, t.merchant, t.note, t.occurredAt,
+               a.name AS accountName, c.name AS categoryName, c.icon AS categoryIcon
+        FROM transactions t
+        JOIN accounts a ON a.id = t.accountId
+        JOIN categories c ON c.id = t.categoryId
+        WHERE t.occurredAt >= :start AND t.occurredAt < :end
+        ORDER BY t.occurredAt DESC, t.id DESC
+        """
+    )
+    fun observeTransactionsInRange(start: Long, end: Long): Flow<List<TransactionRow>>
 
     @Query("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'EXPENSE' AND occurredAt >= :start AND occurredAt < :end")
     fun observeExpenseTotal(start: Long, end: Long): Flow<Long>

@@ -16,10 +16,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountType
+import com.loyu.ledger.data.local.CategoryEntity
 import com.loyu.ledger.data.local.TransactionRow
 import com.loyu.ledger.data.local.TransactionType
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,18 +31,24 @@ fun LedgerApp(vm: LedgerViewModel) {
     val accounts by vm.accounts.collectAsState()
     val allAccounts by vm.allAccounts.collectAsState()
     val categories by vm.categories.collectAsState()
+    val allCategories by vm.allCategories.collectAsState()
     val transactions by vm.transactions.collectAsState()
     val expense by vm.monthExpense.collectAsState()
     val income by vm.monthIncome.collectAsState()
+    val selectedMonth by vm.selectedMonth.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<TransactionRow?>(null) }
     var showAccounts by remember { mutableStateOf(false) }
+    var showCategories by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Loyu 記帳") },
-                actions = { TextButton(onClick = { showAccounts = true }) { Text("帳戶") } },
+                actions = {
+                    TextButton(onClick = { showCategories = true }) { Text("分類") }
+                    TextButton(onClick = { showAccounts = true }) { Text("帳戶") }
+                },
             )
         },
         floatingActionButton = {
@@ -52,12 +61,20 @@ fun LedgerApp(vm: LedgerViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text("本月摘要", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = { vm.previousMonth() }) { Text("‹ 上個月") }
+                    Text(monthLabel(selectedMonth), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { vm.nextMonth() }) { Text("下個月 ›") }
+                }
                 Spacer(Modifier.height(8.dp))
                 SummaryCard(income = income, expense = expense)
             }
-            item { Text("最近紀錄", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-            if (transactions.isEmpty()) item { Text("還沒有紀錄，按右下角「記一筆」開始。") }
+            item { Text("交易紀錄", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+            if (transactions.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
             items(transactions, key = { it.id }) { row ->
                 ListItem(
                     modifier = Modifier.clickable { editingRow = row },
@@ -106,6 +123,16 @@ fun LedgerApp(vm: LedgerViewModel) {
             onAdd = { name, type -> vm.addAccount(name, type) },
             onEdit = { id, name, type -> vm.updateAccount(id, name, type) },
             onToggleActive = { id, isActive -> vm.setAccountActive(id, isActive) },
+        )
+    }
+
+    if (showCategories) {
+        CategoryManagementSheet(
+            categories = allCategories,
+            onDismiss = { showCategories = false },
+            onAdd = { name, type, icon -> vm.addCategory(name, type, icon) },
+            onEdit = { id, name, type, icon -> vm.updateCategory(id, name, type, icon) },
+            onToggleActive = { id, isActive -> vm.setCategoryActive(id, isActive) },
         )
     }
 }
@@ -312,6 +339,103 @@ private fun accountTypeLabel(type: AccountType): String = when (type) {
     AccountType.CREDIT_CARD -> "信用卡"
     AccountType.E_WALLET -> "電子錢包"
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryManagementSheet(
+    categories: List<CategoryEntity>,
+    onDismiss: () -> Unit,
+    onAdd: (String, TransactionType, String) -> Unit,
+    onEdit: (Long, String, TransactionType, String) -> Unit,
+    onToggleActive: (Long, Boolean) -> Unit,
+) {
+    var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
+    var showAddForm by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("分類管理", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            categories.forEach { category ->
+                ListItem(
+                    headlineContent = { Text("${category.icon} ${category.name}") },
+                    supportingContent = {
+                        val typeLabel = if (category.type == TransactionType.EXPENSE) "支出" else "收入"
+                        Text(if (category.isActive) typeLabel else "$typeLabel · 已停用")
+                    },
+                    trailingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { editingCategory = category }) { Text("編輯") }
+                            Switch(checked = category.isActive, onCheckedChange = { onToggleActive(category.id, it) })
+                        }
+                    },
+                )
+            }
+            OutlinedButton(onClick = { showAddForm = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增分類") }
+        }
+    }
+
+    if (showAddForm) {
+        CategoryFormDialog(
+            existing = null,
+            onDismiss = { showAddForm = false },
+            onSave = { name, type, icon -> onAdd(name, type, icon); showAddForm = false },
+        )
+    }
+    editingCategory?.let { category ->
+        CategoryFormDialog(
+            existing = category,
+            onDismiss = { editingCategory = null },
+            onSave = { name, type, icon -> onEdit(category.id, name, type, icon); editingCategory = null },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoryFormDialog(
+    existing: CategoryEntity?,
+    onDismiss: () -> Unit,
+    onSave: (String, TransactionType, String) -> Unit,
+) {
+    var name by remember { mutableStateOf(existing?.name ?: "") }
+    var type by remember { mutableStateOf(existing?.type ?: TransactionType.EXPENSE) }
+    var icon by remember { mutableStateOf(existing?.icon ?: "💰") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "新增分類" else "編輯分類") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = icon,
+                    onValueChange = { icon = it },
+                    label = { Text("圖示（emoji）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("分類名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("類型", fontWeight = FontWeight.SemiBold)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SegmentedButton(selected = type == TransactionType.EXPENSE, onClick = { type = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
+                    SegmentedButton(selected = type == TransactionType.INCOME, onClick = { type = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name.trim(), type, icon.trim()) }, enabled = name.isNotBlank()) { Text("儲存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+private val monthLabelFormatter = DateTimeFormatter.ofPattern("yyyy年MM月", Locale.TAIWAN)
+private fun monthLabel(month: LocalDate): String = month.format(monthLabelFormatter)
 
 private fun money(value: Long): String = "NT$ ${NumberFormat.getIntegerInstance(Locale.TAIWAN).format(value)}"
 private fun formatDate(epoch: Long): String = SimpleDateFormat("MM/dd HH:mm", Locale.TAIWAN).format(Date(epoch))
