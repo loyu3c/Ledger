@@ -82,6 +82,8 @@ fun LedgerApp(vm: LedgerViewModel) {
     var showStatistics by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showDebts by remember { mutableStateOf(false) }
+    var showAddDebt by remember { mutableStateOf(false) }
+    var showFabMenu by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
     var selectedDay by remember(selectedMonth) { mutableStateOf<LocalDate?>(null) }
     val zone = remember { ZoneId.systemDefault() }
@@ -92,7 +94,6 @@ fun LedgerApp(vm: LedgerViewModel) {
                 title = { Text("有魚記帳") },
                 actions = {
                     TextButton(onClick = { showStatistics = true }) { Text("統計") }
-                    TextButton(onClick = { showDebts = true }) { Text("借貸") }
                     TextButton(onClick = { showCategories = true }) { Text("分類") }
                     TextButton(onClick = { showAccounts = true }) { Text("帳戶") }
                     TextButton(onClick = { showSettings = true }) { Text("設定") }
@@ -100,7 +101,23 @@ fun LedgerApp(vm: LedgerViewModel) {
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { showAdd = true }) { Text("＋ 記一筆") }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (showFabMenu) {
+                    ExtendedFloatingActionButton(
+                        onClick = { showFabMenu = false; showAddDebt = true },
+                        icon = { Text("🤝") },
+                        text = { Text("新增借貸") },
+                    )
+                    ExtendedFloatingActionButton(
+                        onClick = { showFabMenu = false; showAdd = true },
+                        icon = { Text("💰") },
+                        text = { Text("收入/支出") },
+                    )
+                }
+                FloatingActionButton(onClick = { showFabMenu = !showFabMenu }) {
+                    Text(if (showFabMenu) "×" else "＋", style = MaterialTheme.typography.headlineMedium)
+                }
+            }
         },
     ) { padding ->
         LazyColumn(
@@ -253,6 +270,17 @@ fun LedgerApp(vm: LedgerViewModel) {
             },
             onSettle = { vm.settleDebt(it) },
             onDelete = { vm.deleteDebt(it) },
+        )
+    }
+
+    if (showAddDebt) {
+        DebtFormDialog(
+            defaultDirection = DebtDirection.LEND,
+            onDismiss = { showAddDebt = false },
+            onSave = { direction, counterparty, amount, occurredAt, dueDate, note ->
+                vm.addDebt(direction, counterparty, amount, occurredAt, dueDate, note)
+                showAddDebt = false
+            },
         )
     }
 
