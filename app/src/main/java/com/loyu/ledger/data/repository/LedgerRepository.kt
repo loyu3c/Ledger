@@ -1,5 +1,6 @@
 package com.loyu.ledger.data.repository
 
+import com.loyu.ledger.data.backup.BackupSerializer
 import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
@@ -111,6 +112,18 @@ class LedgerRepository(private val dao: LedgerDao) {
     suspend fun setCategoryActive(id: Long, isActive: Boolean) {
         val existing = dao.getCategory(id) ?: return
         dao.updateCategory(existing.copy(isActive = isActive))
+    }
+
+    suspend fun exportBackup(): String {
+        val accounts = dao.getAllAccountsOnce()
+        val categories = dao.getAllCategoriesOnce()
+        val transactions = dao.getAllTransactionsOnce()
+        return BackupSerializer.toJson(accounts, categories, transactions)
+    }
+
+    suspend fun importBackup(json: String) {
+        val data = BackupSerializer.fromJson(json)
+        dao.replaceAllData(data.accounts, data.categories, data.transactions)
     }
 
     suspend fun seedDefaultsIfNeeded() {

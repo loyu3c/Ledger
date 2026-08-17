@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.TransactionType
 import com.loyu.ledger.data.prefs.SettingsRepository
+import com.loyu.ledger.data.prefs.ThemeMode
 import com.loyu.ledger.data.remote.GroqClient
 import com.loyu.ledger.data.remote.VoiceTransactionResult
 import com.loyu.ledger.data.repository.LedgerRepository
@@ -29,6 +30,9 @@ class LedgerViewModel(
 
     private val _groqApiKey = MutableStateFlow(settingsRepository.getGroqApiKey())
     val groqApiKey: StateFlow<String> = _groqApiKey.asStateFlow()
+
+    private val _themeMode = MutableStateFlow(settingsRepository.getThemeMode())
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
     val accounts = repository.accounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val allAccounts = repository.allAccounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -111,9 +115,18 @@ class LedgerViewModel(
         _groqApiKey.value = key
     }
 
+    fun setThemeMode(mode: ThemeMode) {
+        settingsRepository.setThemeMode(mode)
+        _themeMode.value = mode
+    }
+
     suspend fun parseVoiceTransaction(spokenText: String, categoryNames: List<String>): VoiceTransactionResult? {
         return GroqClient(_groqApiKey.value).parseTransaction(spokenText, categoryNames)
     }
+
+    suspend fun exportBackup(): String = repository.exportBackup()
+
+    suspend fun importBackup(json: String) = repository.importBackup(json)
 
     class Factory(
         private val repository: LedgerRepository,
