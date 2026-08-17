@@ -3,6 +3,8 @@ package com.loyu.ledger.data.backup
 import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
+import com.loyu.ledger.data.local.DebtDirection
+import com.loyu.ledger.data.local.DebtEntity
 import com.loyu.ledger.data.local.TransactionEntity
 import com.loyu.ledger.data.local.TransactionType
 import org.json.JSONArray
@@ -12,13 +14,19 @@ data class BackupData(
     val accounts: List<AccountEntity>,
     val categories: List<CategoryEntity>,
     val transactions: List<TransactionEntity>,
+    val debts: List<DebtEntity>,
 )
 
 /** Serializes the whole local database to/from a single JSON file for manual backup/restore. */
 object BackupSerializer {
-    private const val VERSION = 1
+    private const val VERSION = 2
 
-    fun toJson(accounts: List<AccountEntity>, categories: List<CategoryEntity>, transactions: List<TransactionEntity>): String {
+    fun toJson(
+        accounts: List<AccountEntity>,
+        categories: List<CategoryEntity>,
+        transactions: List<TransactionEntity>,
+        debts: List<DebtEntity>,
+    ): String {
         val root = JSONObject()
         root.put("version", VERSION)
         root.put("exportedAt", System.currentTimeMillis())
@@ -76,6 +84,26 @@ object BackupSerializer {
                 }
             },
         )
+        root.put(
+            "debts",
+            JSONArray().apply {
+                debts.forEach {
+                    put(
+                        JSONObject().apply {
+                            put("id", it.id)
+                            put("direction", it.direction.name)
+                            put("counterparty", it.counterparty)
+                            put("amount", it.amount)
+                            put("occurredAt", it.occurredAt)
+                            put("dueDate", it.dueDate ?: JSONObject.NULL)
+                            put("note", it.note)
+                            put("isSettled", it.isSettled)
+                            put("settledAt", it.settledAt ?: JSONObject.NULL)
+                        }
+                    )
+                }
+            },
+        )
         return root.toString(2)
     }
 
@@ -127,6 +155,24 @@ object BackupSerializer {
             }
         }
 
-        return BackupData(accounts, categories, transactions)
+        // Older backups (v1) predate the debts table; default to an empty list.
+        val debts = (root.optJSONArray("debts") ?: JSONArray()).let { arr ->
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                DebtEntity(
+                    id = o.getLong("id"),
+                    direction = DebtDirection.valueOf(o.getString("direction")),
+                    counterparty = o.getString("counterparty"),
+                    amount = o.getLong("amount"),
+                    occurredAt = o.getLong("occurredAt"),
+                    dueDate = if (o.isNull("dueDate")) null else o.getLong("dueDate"),
+                    note = o.optString("note", ""),
+                    isSettled = o.optBoolean("isSettled", false),
+                    settledAt = if (o.isNull("settledAt")) null else o.getLong("settledAt"),
+                )
+            }
+        }
+
+        return BackupData(accounts, categories, transactions, debts)
     }
 }

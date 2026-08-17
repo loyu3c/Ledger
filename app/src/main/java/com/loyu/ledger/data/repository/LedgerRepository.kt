@@ -4,6 +4,8 @@ import com.loyu.ledger.data.backup.BackupSerializer
 import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
+import com.loyu.ledger.data.local.DebtDirection
+import com.loyu.ledger.data.local.DebtEntity
 import com.loyu.ledger.data.local.LedgerDao
 import com.loyu.ledger.data.local.TransactionEntity
 import com.loyu.ledger.data.local.TransactionType
@@ -16,6 +18,7 @@ class LedgerRepository(private val dao: LedgerDao) {
     val categories = dao.observeCategories()
     val allCategories = dao.observeAllCategories()
     val transactions = dao.observeTransactions()
+    val debts = dao.observeDebts()
 
     fun monthRangeMillis(now: LocalDate = LocalDate.now()): Pair<Long, Long> {
         val zone = ZoneId.systemDefault()
@@ -114,16 +117,40 @@ class LedgerRepository(private val dao: LedgerDao) {
         dao.updateCategory(existing.copy(isActive = isActive))
     }
 
+    suspend fun addDebt(direction: DebtDirection, counterparty: String, amount: Long, occurredAt: Long, dueDate: Long?, note: String) {
+        require(counterparty.isNotBlank())
+        require(amount > 0)
+        dao.insertDebt(
+            DebtEntity(
+                direction = direction,
+                counterparty = counterparty.trim(),
+                amount = amount,
+                occurredAt = occurredAt,
+                dueDate = dueDate,
+                note = note.trim(),
+            )
+        )
+    }
+
+    suspend fun settleDebt(id: Long) {
+        dao.markDebtSettled(id, System.currentTimeMillis())
+    }
+
+    suspend fun deleteDebt(id: Long) {
+        dao.deleteDebt(id)
+    }
+
     suspend fun exportBackup(): String {
         val accounts = dao.getAllAccountsOnce()
         val categories = dao.getAllCategoriesOnce()
         val transactions = dao.getAllTransactionsOnce()
-        return BackupSerializer.toJson(accounts, categories, transactions)
+        val debts = dao.getAllDebtsOnce()
+        return BackupSerializer.toJson(accounts, categories, transactions, debts)
     }
 
     suspend fun importBackup(json: String) {
         val data = BackupSerializer.fromJson(json)
-        dao.replaceAllData(data.accounts, data.categories, data.transactions)
+        dao.replaceAllData(data.accounts, data.categories, data.transactions, data.debts)
     }
 
     suspend fun seedDefaultsIfNeeded() {

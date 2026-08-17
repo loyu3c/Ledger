@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.loyu.ledger.data.local.AccountType
+import com.loyu.ledger.data.local.DebtDirection
 import com.loyu.ledger.data.local.TransactionType
 import com.loyu.ledger.data.prefs.SettingsRepository
 import com.loyu.ledger.data.prefs.ThemeMode
@@ -38,6 +39,8 @@ class LedgerViewModel(
     val allAccounts = repository.allAccounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val categories = repository.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val allCategories = repository.allCategories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val debts = repository.debts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val transactions = _selectedMonth.flatMapLatest { month ->
         val (start, end) = repository.monthRangeMillis(month)
@@ -122,6 +125,18 @@ class LedgerViewModel(
 
     suspend fun parseVoiceTransaction(spokenText: String, categoryNames: List<String>): VoiceTransactionResult? {
         return GroqClient(_groqApiKey.value).parseTransaction(spokenText, categoryNames)
+    }
+
+    fun addDebt(direction: DebtDirection, counterparty: String, amount: Long, occurredAt: Long, dueDate: Long?, note: String) {
+        viewModelScope.launch { repository.addDebt(direction, counterparty, amount, occurredAt, dueDate, note) }
+    }
+
+    fun settleDebt(id: Long) {
+        viewModelScope.launch { repository.settleDebt(id) }
+    }
+
+    fun deleteDebt(id: Long) {
+        viewModelScope.launch { repository.deleteDebt(id) }
     }
 
     suspend fun exportBackup(): String = repository.exportBackup()
