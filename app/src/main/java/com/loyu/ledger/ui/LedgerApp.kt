@@ -82,7 +82,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Loyu 記帳") },
+                title = { Text("有魚記帳") },
                 actions = {
                     TextButton(onClick = { showStatistics = true }) { Text("統計") }
                     TextButton(onClick = { showCategories = true }) { Text("分類") }
