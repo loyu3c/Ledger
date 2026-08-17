@@ -12,9 +12,16 @@ interface LedgerDao {
     @Insert suspend fun insertCategory(category: CategoryEntity): Long
     @Insert suspend fun insertTransaction(transaction: TransactionEntity): Long
     @Update suspend fun updateTransaction(transaction: TransactionEntity)
+    @Update suspend fun updateAccount(account: AccountEntity)
 
     @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id")
     fun observeAccounts(): Flow<List<AccountEntity>>
+
+    @Query("SELECT * FROM accounts ORDER BY isActive DESC, id")
+    fun observeAllAccounts(): Flow<List<AccountEntity>>
+
+    @Query("SELECT * FROM accounts WHERE id = :id")
+    suspend fun getAccount(id: Long): AccountEntity?
 
     @Query("SELECT * FROM categories WHERE isActive = 1 ORDER BY sortOrder, id")
     fun observeCategories(): Flow<List<CategoryEntity>>

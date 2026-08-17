@@ -11,6 +11,7 @@ import java.time.ZoneId
 
 class LedgerRepository(private val dao: LedgerDao) {
     val accounts = dao.observeAccounts()
+    val allAccounts = dao.observeAllAccounts()
     val categories = dao.observeCategories()
     val transactions = dao.observeTransactions()
 
@@ -71,6 +72,22 @@ class LedgerRepository(private val dao: LedgerDao) {
 
     suspend fun deleteTransaction(id: Long) {
         dao.deleteTransaction(id)
+    }
+
+    suspend fun addAccount(name: String, type: AccountType) {
+        require(name.isNotBlank())
+        dao.insertAccount(AccountEntity(name = name.trim(), type = type))
+    }
+
+    suspend fun updateAccount(id: Long, name: String, type: AccountType) {
+        require(name.isNotBlank())
+        val existing = dao.getAccount(id) ?: return
+        dao.updateAccount(existing.copy(name = name.trim(), type = type))
+    }
+
+    suspend fun setAccountActive(id: Long, isActive: Boolean) {
+        val existing = dao.getAccount(id) ?: return
+        dao.updateAccount(existing.copy(isActive = isActive))
     }
 
     suspend fun seedDefaultsIfNeeded() {

@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.loyu.ledger.data.local.AccountEntity
+import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.TransactionRow
 import com.loyu.ledger.data.local.TransactionType
 import java.text.NumberFormat
@@ -22,15 +24,22 @@ import java.util.*
 @Composable
 fun LedgerApp(vm: LedgerViewModel) {
     val accounts by vm.accounts.collectAsState()
+    val allAccounts by vm.allAccounts.collectAsState()
     val categories by vm.categories.collectAsState()
     val transactions by vm.transactions.collectAsState()
     val expense by vm.monthExpense.collectAsState()
     val income by vm.monthIncome.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<TransactionRow?>(null) }
+    var showAccounts by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Loyu 記帳") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Loyu 記帳") },
+                actions = { TextButton(onClick = { showAccounts = true }) { Text("帳戶") } },
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(onClick = { showAdd = true }) { Text("＋ 記一筆") }
         },
@@ -85,6 +94,16 @@ fun LedgerApp(vm: LedgerViewModel) {
                     editingRow = null
                 }
             } else null,
+        )
+    }
+
+    if (showAccounts) {
+        AccountManagementSheet(
+            accounts = allAccounts,
+            onDismiss = { showAccounts = false },
+            onAdd = { name, type -> vm.addAccount(name, type) },
+            onEdit = { id, name, type -> vm.updateAccount(id, name, type) },
+            onToggleActive = { id, isActive -> vm.setAccountActive(id, isActive) },
         )
     }
 }
@@ -197,6 +216,95 @@ private fun TransactionSheet(
             dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") } },
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AccountManagementSheet(
+    accounts: List<AccountEntity>,
+    onDismiss: () -> Unit,
+    onAdd: (String, AccountType) -> Unit,
+    onEdit: (Long, String, AccountType) -> Unit,
+    onToggleActive: (Long, Boolean) -> Unit,
+) {
+    var editingAccount by remember { mutableStateOf<AccountEntity?>(null) }
+    var showAddForm by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("帳戶管理", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            accounts.forEach { account ->
+                ListItem(
+                    headlineContent = { Text(account.name) },
+                    supportingContent = {
+                        Text(if (account.isActive) accountTypeLabel(account.type) else "${accountTypeLabel(account.type)} · 已停用")
+                    },
+                    trailingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { editingAccount = account }) { Text("編輯") }
+                            Switch(checked = account.isActive, onCheckedChange = { onToggleActive(account.id, it) })
+                        }
+                    },
+                )
+            }
+            OutlinedButton(onClick = { showAddForm = true }, modifier = Modifier.fillMaxWidth()) { Text("＋ 新增帳戶") }
+        }
+    }
+
+    if (showAddForm) {
+        AccountFormDialog(
+            existing = null,
+            onDismiss = { showAddForm = false },
+            onSave = { name, type -> onAdd(name, type); showAddForm = false },
+        )
+    }
+    editingAccount?.let { account ->
+        AccountFormDialog(
+            existing = account,
+            onDismiss = { editingAccount = null },
+            onSave = { name, type -> onEdit(account.id, name, type); editingAccount = null },
+        )
+    }
+}
+
+@Composable
+private fun AccountFormDialog(
+    existing: AccountEntity?,
+    onDismiss: () -> Unit,
+    onSave: (String, AccountType) -> Unit,
+) {
+    var name by remember { mutableStateOf(existing?.name ?: "") }
+    var type by remember { mutableStateOf(existing?.type ?: AccountType.CASH) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "新增帳戶" else "編輯帳戶") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("帳戶名稱") }, singleLine = true)
+                Text("類型", fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AccountType.entries.forEach { t ->
+                        FilterChip(selected = type == t, onClick = { type = t }, label = { Text(accountTypeLabel(t)) })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name.trim(), type) }, enabled = name.isNotBlank()) { Text("儲存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
+private fun accountTypeLabel(type: AccountType): String = when (type) {
+    AccountType.CASH -> "現金"
+    AccountType.BANK -> "銀行帳戶"
+    AccountType.CREDIT_CARD -> "信用卡"
+    AccountType.E_WALLET -> "電子錢包"
 }
 
 private fun money(value: Long): String = "NT$ ${NumberFormat.getIntegerInstance(Locale.TAIWAN).format(value)}"
