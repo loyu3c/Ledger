@@ -1,6 +1,7 @@
 package com.loyu.ledger.ui
 
 import android.content.Intent
+import android.graphics.Paint
 import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,9 +21,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -46,6 +50,8 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.*
+import kotlin.math.cos
+import kotlin.math.sin
 
 private enum class ViewMode { LIST, CALENDAR }
 
@@ -381,7 +387,7 @@ private fun TransactionSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             Modifier.fillMaxWidth()
                 .verticalScroll(rememberScrollState())
@@ -542,7 +548,7 @@ private fun AccountManagementSheet(
     var editingAccount by remember { mutableStateOf<AccountEntity?>(null) }
     var showAddForm by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -632,7 +638,7 @@ private fun CategoryManagementSheet(
     var showAddForm by remember { mutableStateOf(false) }
     var filterType by remember { mutableStateOf(TransactionType.EXPENSE) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             Modifier.fillMaxWidth()
                 .verticalScroll(rememberScrollState())
@@ -751,7 +757,7 @@ private fun StatisticsSheet(
     val total = data.sumOf { it.total }.coerceAtLeast(1)
     val colors = chartColors(data.size)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             Modifier.fillMaxWidth()
                 .verticalScroll(rememberScrollState())
@@ -767,8 +773,14 @@ private fun StatisticsSheet(
             if (data.isEmpty()) {
                 Text(if (type == TransactionType.EXPENSE) "這個月還沒有支出紀錄。" else "這個月還沒有收入紀錄。")
             } else {
-                Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                    CategoryPieChart(data = data, colors = colors, modifier = Modifier.size(180.dp))
+                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                    CategoryPieChart(
+                        data = data,
+                        colors = colors,
+                        centerLabel = if (type == TransactionType.EXPENSE) "支出" else "收入",
+                        centerAmount = money(total),
+                        modifier = Modifier.size(220.dp),
+                    )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     data.forEachIndexed { index, item ->
@@ -786,11 +798,27 @@ private fun StatisticsSheet(
 }
 
 @Composable
-private fun CategoryPieChart(data: List<CategoryTotal>, colors: List<Color>, modifier: Modifier = Modifier) {
+private fun CategoryPieChart(
+    data: List<CategoryTotal>,
+    colors: List<Color>,
+    centerLabel: String,
+    centerAmount: String,
+    modifier: Modifier = Modifier,
+) {
     val total = data.sumOf { it.total }.coerceAtLeast(1)
+    val onSurface = MaterialTheme.colorScheme.onSurface.toArgb()
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
     Canvas(modifier) {
-        val strokeWidth = size.minDimension * 0.28f
+        val strokeWidth = size.minDimension * 0.26f
+        val labelRadius = (size.minDimension - strokeWidth) / 2f
+        val center = Offset(size.width / 2f, size.height / 2f)
         var startAngle = -90f
+        val slicePercentPaint = Paint().apply {
+            color = android.graphics.Color.WHITE
+            isFakeBoldText = true
+            textAlign = Paint.Align.CENTER
+            textSize = strokeWidth * 0.34f
+        }
         data.forEachIndexed { index, item ->
             val sweep = 360f * item.total / total
             drawArc(
@@ -800,7 +828,29 @@ private fun CategoryPieChart(data: List<CategoryTotal>, colors: List<Color>, mod
                 useCenter = false,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Butt),
             )
+            val percent = (item.total * 100 / total).toInt()
+            if (sweep >= 20f) {
+                val midAngleRad = Math.toRadians((startAngle + sweep / 2).toDouble())
+                val labelX = center.x + labelRadius * cos(midAngleRad).toFloat()
+                val labelY = center.y + labelRadius * sin(midAngleRad).toFloat() + slicePercentPaint.textSize / 3
+                drawContext.canvas.nativeCanvas.drawText("$percent%", labelX, labelY, slicePercentPaint)
+            }
             startAngle += sweep
+        }
+        val amountPaint = Paint().apply {
+            color = onSurface
+            isFakeBoldText = true
+            textAlign = Paint.Align.CENTER
+            textSize = size.minDimension * 0.13f
+        }
+        val labelPaint = Paint().apply {
+            color = onSurfaceVariant
+            textAlign = Paint.Align.CENTER
+            textSize = size.minDimension * 0.075f
+        }
+        drawContext.canvas.nativeCanvas.apply {
+            drawText(centerLabel, center.x, center.y - amountPaint.textSize * 0.3f, labelPaint)
+            drawText(centerAmount, center.x, center.y + amountPaint.textSize * 0.65f, amountPaint)
         }
     }
 }
