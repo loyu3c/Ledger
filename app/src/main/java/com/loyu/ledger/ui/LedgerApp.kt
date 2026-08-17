@@ -14,12 +14,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
@@ -28,9 +31,13 @@ import com.loyu.ledger.data.local.TransactionRow
 import com.loyu.ledger.data.local.TransactionType
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.*
+
+private enum class ViewMode { LIST, CALENDAR }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +57,9 @@ fun LedgerApp(vm: LedgerViewModel) {
     var showAccounts by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
     var showStatistics by remember { mutableStateOf(false) }
+    var viewMode by remember { mutableStateOf(ViewMode.LIST) }
+    var selectedDay by remember(selectedMonth) { mutableStateOf<LocalDate?>(null) }
+    val zone = remember { ZoneId.systemDefault() }
 
     Scaffold(
         topBar = {
@@ -83,20 +93,57 @@ fun LedgerApp(vm: LedgerViewModel) {
                 }
                 Spacer(Modifier.height(8.dp))
                 SummaryCard(income = income, expense = expense)
+                Spacer(Modifier.height(8.dp))
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SegmentedButton(selected = viewMode == ViewMode.LIST, onClick = { viewMode = ViewMode.LIST }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("列表") }
+                    SegmentedButton(selected = viewMode == ViewMode.CALENDAR, onClick = { viewMode = ViewMode.CALENDAR }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("月曆") }
+                }
             }
-            item { Text("交易紀錄", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
-            if (transactions.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
-            items(transactions, key = { it.id }) { row ->
-                ListItem(
-                    modifier = Modifier.clickable { editingRow = row },
-                    headlineContent = { Text(if (row.merchant.isNotBlank()) row.merchant else row.categoryName) },
-                    supportingContent = { Text("${row.categoryIcon} ${row.categoryName} · ${row.accountName} · ${formatDate(row.occurredAt)}") },
-                    trailingContent = {
-                        val prefix = if (row.type == TransactionType.EXPENSE) "-" else "+"
-                        Text("$prefix${money(row.amount)}", fontWeight = FontWeight.SemiBold)
-                    },
-                )
-                HorizontalDivider()
+
+            if (viewMode == ViewMode.LIST) {
+                item { Text("交易紀錄", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                if (transactions.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
+                items(transactions, key = { it.id }) { row ->
+                    TransactionListItem(row = row, onClick = { editingRow = row })
+                    HorizontalDivider()
+                }
+            } else {
+                item {
+                    val activeDays = remember(transactions) {
+                        transactions.map { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }.toSet()
+                    }
+                    MonthCalendar(
+                        month = selectedMonth,
+                        activeDays = activeDays,
+                        selectedDay = selectedDay,
+                        onSelectDay = { selectedDay = it },
+                    )
+                }
+                val day = selectedDay
+                if (day == null) {
+                    item { Text("點選上方日期查看當天的收支明細。") }
+                } else {
+                    val dayTransactions = transactions.filter { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() == day }
+                    val dayExpense = dayTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+                    val dayIncome = dayTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+                    item {
+                        Text(
+                            "${day.monthValue}/${day.dayOfMonth} 明細",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        SummaryCard(income = dayIncome, expense = dayExpense)
+                    }
+                    if (dayTransactions.isEmpty()) {
+                        item { Text("這天還沒有紀錄。") }
+                    } else {
+                        items(dayTransactions, key = { it.id }) { row ->
+                            TransactionListItem(row = row, onClick = { editingRow = row })
+                            HorizontalDivider()
+                        }
+                    }
+                }
             }
         }
     }
@@ -174,6 +221,82 @@ private fun SummaryLine(label: String, value: String, bold: Boolean = false) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label)
         Text(value, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+@Composable
+private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        headlineContent = { Text(if (row.merchant.isNotBlank()) row.merchant else row.categoryName) },
+        supportingContent = { Text("${row.categoryIcon} ${row.categoryName} · ${row.accountName} · ${formatDate(row.occurredAt)}") },
+        trailingContent = {
+            val prefix = if (row.type == TransactionType.EXPENSE) "-" else "+"
+            Text("$prefix${money(row.amount)}", fontWeight = FontWeight.SemiBold)
+        },
+    )
+}
+
+private val weekdayLabels = listOf("日", "一", "二", "三", "四", "五", "六")
+
+@Composable
+private fun MonthCalendar(
+    month: LocalDate,
+    activeDays: Set<LocalDate>,
+    selectedDay: LocalDate?,
+    onSelectDay: (LocalDate) -> Unit,
+) {
+    val firstDayOfMonth = month.withDayOfMonth(1)
+    val daysInMonth = month.lengthOfMonth()
+    // DayOfWeek: MONDAY=1..SUNDAY=7; convert so SUNDAY lands in column 0.
+    val firstWeekdayIndex = firstDayOfMonth.dayOfWeek.value % 7
+    val totalCells = firstWeekdayIndex + daysInMonth
+    val rows = (totalCells + 6) / 7
+
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth()) {
+            weekdayLabels.forEach { label ->
+                Text(
+                    label,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+        for (row in 0 until rows) {
+            Row(Modifier.fillMaxWidth()) {
+                for (col in 0 until 7) {
+                    val dayNumber = row * 7 + col - firstWeekdayIndex + 1
+                    Box(
+                        modifier = Modifier.weight(1f).aspectRatio(1f).padding(2.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (dayNumber in 1..daysInMonth) {
+                            val date = firstDayOfMonth.withDayOfMonth(dayNumber)
+                            val selected = date == selectedDay
+                            Column(
+                                modifier = Modifier.fillMaxSize()
+                                    .clip(CircleShape)
+                                    .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .clickable { onSelectDay(date) },
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Text("$dayNumber", style = MaterialTheme.typography.bodyMedium)
+                                Box(
+                                    Modifier.size(4.dp)
+                                        .background(
+                                            if (date in activeDays) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            CircleShape,
+                                        )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -371,6 +494,7 @@ private fun CategoryManagementSheet(
 ) {
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var showAddForm by remember { mutableStateOf(false) }
+    var filterType by remember { mutableStateOf(TransactionType.EXPENSE) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -381,7 +505,11 @@ private fun CategoryManagementSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("分類管理", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            categories.forEach { category ->
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(selected = filterType == TransactionType.EXPENSE, onClick = { filterType = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
+                SegmentedButton(selected = filterType == TransactionType.INCOME, onClick = { filterType = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
+            }
+            categories.filter { it.type == filterType }.forEach { category ->
                 ListItem(
                     headlineContent = { Text("${category.icon} ${category.name}") },
                     supportingContent = {
@@ -403,6 +531,7 @@ private fun CategoryManagementSheet(
     if (showAddForm) {
         CategoryFormDialog(
             existing = null,
+            defaultType = filterType,
             onDismiss = { showAddForm = false },
             onSave = { name, type, icon -> onAdd(name, type, icon); showAddForm = false },
         )
@@ -410,35 +539,54 @@ private fun CategoryManagementSheet(
     editingCategory?.let { category ->
         CategoryFormDialog(
             existing = category,
+            defaultType = category.type,
             onDismiss = { editingCategory = null },
             onSave = { name, type, icon -> onEdit(category.id, name, type, icon); editingCategory = null },
         )
     }
 }
 
+private val categoryIconPalette = listOf(
+    "🍜", "🍔", "☕", "🍎", "🛒", "🛍️", "👗", "🚗", "🚌", "⛽",
+    "🏠", "💡", "📱", "💊", "🏥", "🎬", "🎮", "🎵", "📚", "✈️",
+    "🎁", "💼", "💰", "📈", "🐾", "👶", "⚽", "🔧", "📦", "❤️",
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CategoryFormDialog(
     existing: CategoryEntity?,
+    defaultType: TransactionType,
     onDismiss: () -> Unit,
     onSave: (String, TransactionType, String) -> Unit,
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
-    var type by remember { mutableStateOf(existing?.type ?: TransactionType.EXPENSE) }
-    var icon by remember { mutableStateOf(existing?.icon ?: "💰") }
+    var type by remember { mutableStateOf(existing?.type ?: defaultType) }
+    var icon by remember { mutableStateOf(existing?.icon ?: categoryIconPalette.first()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "新增分類" else "編輯分類") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = icon,
-                    onValueChange = { icon = it },
-                    label = { Text("圖示（emoji）") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("圖示", fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    categoryIconPalette.forEach { emoji ->
+                        val selected = icon == emoji
+                        Box(
+                            modifier = Modifier.size(40.dp)
+                                .clip(CircleShape)
+                                .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { icon = emoji },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(emoji, fontSize = 20.sp)
+                        }
+                    }
+                }
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("分類名稱") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("類型", fontWeight = FontWeight.SemiBold)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
