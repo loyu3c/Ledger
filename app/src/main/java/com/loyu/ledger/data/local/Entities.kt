@@ -72,3 +72,10 @@ data class TransactionRow(
     val categoryName: String,
     val categoryIcon: String,
 )
+
+data class CategoryTotal(
+    val categoryId: Long,
+    val categoryName: String,
+    val categoryIcon: String,
+    val total: Long,
+)

@@ -41,6 +41,16 @@ class LedgerViewModel(private val repository: LedgerRepository) : ViewModel() {
         repository.monthIncome(start, end)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    val expenseByCategory = _selectedMonth.flatMapLatest { month ->
+        val (start, end) = repository.monthRangeMillis(month)
+        repository.categoryTotals(TransactionType.EXPENSE, start, end)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val incomeByCategory = _selectedMonth.flatMapLatest { month ->
+        val (start, end) = repository.monthRangeMillis(month)
+        repository.categoryTotals(TransactionType.INCOME, start, end)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init { viewModelScope.launch { repository.seedDefaultsIfNeeded() } }
 
     fun previousMonth() {
