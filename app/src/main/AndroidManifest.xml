@@ -7,7 +7,9 @@
     <application
         android:name=".LedgerApplication"
         android:allowBackup="true"
-        android:label="Loyu 記帳"
+        android:label="有魚記帳"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.LoyuLedger">
         <activity
