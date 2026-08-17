@@ -92,8 +92,6 @@ fun LedgerApp(vm: LedgerViewModel) {
                     TextButton(onClick = { vm.nextMonth() }) { Text("下個月 ›") }
                 }
                 Spacer(Modifier.height(8.dp))
-                SummaryCard(income = income, expense = expense)
-                Spacer(Modifier.height(8.dp))
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     SegmentedButton(selected = viewMode == ViewMode.LIST, onClick = { viewMode = ViewMode.LIST }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("列表") }
                     SegmentedButton(selected = viewMode == ViewMode.CALENDAR, onClick = { viewMode = ViewMode.CALENDAR }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("月曆") }
@@ -101,6 +99,9 @@ fun LedgerApp(vm: LedgerViewModel) {
             }
 
             if (viewMode == ViewMode.LIST) {
+                item {
+                    SummaryCard(income = income, expense = expense)
+                }
                 item { Text("交易紀錄", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
                 if (transactions.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
                 items(transactions, key = { it.id }) { row ->
