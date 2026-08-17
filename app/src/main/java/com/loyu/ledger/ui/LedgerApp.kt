@@ -159,7 +159,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                             fontWeight = FontWeight.Bold,
                         )
                         Spacer(Modifier.height(8.dp))
-                        SummaryCard(income = dayIncome, expense = dayExpense)
+                        DaySummaryRow(income = dayIncome, expense = dayExpense)
                     }
                     if (dayTransactions.isEmpty()) {
                         item { Text("這天還沒有紀錄。") }
@@ -259,6 +259,29 @@ private fun SummaryLine(label: String, value: String, bold: Boolean = false) {
     }
 }
 
+@Composable
+private fun DaySummaryRow(income: Long, expense: Long) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("收入", style = MaterialTheme.typography.labelSmall)
+                Text(money(income), color = IncomeGreen, fontWeight = FontWeight.SemiBold)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("支出", style = MaterialTheme.typography.labelSmall)
+                Text(money(expense), fontWeight = FontWeight.SemiBold)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("結餘", style = MaterialTheme.typography.labelSmall)
+                Text(money(income - expense), fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
 private val IncomeGreen = Color(0xFF2E7D32)
 private val ExpenseRed = Color(0xFFC62828)
 
@@ -288,6 +311,7 @@ private fun MonthCalendar(
 ) {
     val firstDayOfMonth = month.withDayOfMonth(1)
     val daysInMonth = month.lengthOfMonth()
+    val today = remember { LocalDate.now() }
     // DayOfWeek: MONDAY=1..SUNDAY=7; convert so SUNDAY lands in column 0.
     val firstWeekdayIndex = firstDayOfMonth.dayOfWeek.value % 7
     val totalCells = firstWeekdayIndex + daysInMonth
@@ -315,10 +339,15 @@ private fun MonthCalendar(
                         if (dayNumber in 1..daysInMonth) {
                             val date = firstDayOfMonth.withDayOfMonth(dayNumber)
                             val selected = date == selectedDay
+                            val background = when {
+                                selected -> MaterialTheme.colorScheme.primaryContainer
+                                date == today -> MaterialTheme.colorScheme.surfaceVariant
+                                else -> Color.Transparent
+                            }
                             Column(
                                 modifier = Modifier.fillMaxSize()
                                     .clip(CircleShape)
-                                    .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                                    .background(background)
                                     .clickable { onSelectDay(date) },
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
@@ -810,7 +839,7 @@ private fun CategoryPieChart(
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
     Canvas(modifier) {
         val strokeWidth = size.minDimension * 0.26f
-        val labelRadius = (size.minDimension - strokeWidth) / 2f
+        val labelRadius = size.minDimension / 2f
         val center = Offset(size.width / 2f, size.height / 2f)
         var startAngle = -90f
         val slicePercentPaint = Paint().apply {
