@@ -2,6 +2,7 @@ package com.loyu.ledger.ui
 
 import android.content.Intent
 import android.graphics.Paint
+import android.net.Uri
 import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -40,6 +41,7 @@ import com.loyu.ledger.data.local.CategoryEntity
 import com.loyu.ledger.data.local.CategoryTotal
 import com.loyu.ledger.data.local.TransactionRow
 import com.loyu.ledger.data.local.TransactionType
+import com.loyu.ledger.data.prefs.ThemeMode
 import com.loyu.ledger.data.remote.VoiceTransactionResult
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -69,6 +71,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     val expenseByCategory by vm.expenseByCategory.collectAsState()
     val incomeByCategory by vm.incomeByCategory.collectAsState()
     val groqApiKey by vm.groqApiKey.collectAsState()
+    val themeMode by vm.themeMode.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<TransactionRow?>(null) }
     var showAccounts by remember { mutableStateOf(false) }
@@ -226,10 +229,14 @@ fun LedgerApp(vm: LedgerViewModel) {
     }
 
     if (showSettings) {
-        SettingsDialog(
+        SettingsSheet(
             currentApiKey = groqApiKey,
+            themeMode = themeMode,
             onDismiss = { showSettings = false },
-            onSave = { vm.setGroqApiKey(it) },
+            onSaveApiKey = { vm.setGroqApiKey(it) },
+            onThemeModeChange = { vm.setThemeMode(it) },
+            onExportBackup = { vm.exportBackup() },
+            onImportBackup = { vm.importBackup(it) },
         )
     }
 }
@@ -524,19 +531,62 @@ private fun TransactionSheet(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsDialog(
+private fun SettingsSheet(
     currentApiKey: String,
+    themeMode: ThemeMode,
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
+    onSaveApiKey: (String) -> Unit,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    onExportBackup: suspend () -> String,
+    onImportBackup: suspend (String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf(currentApiKey) }
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("設定") },
-        text = {
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val json = onExportBackup()
+                context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
+            }.onSuccess {
+                Toast.makeText(context, "備份匯出成功", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(context, "匯出失敗", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) pendingImportUri = uri
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("設定", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("外觀", fontWeight = FontWeight.SemiBold)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SegmentedButton(selected = themeMode == ThemeMode.SYSTEM, onClick = { onThemeModeChange(ThemeMode.SYSTEM) }, shape = SegmentedButtonDefaults.itemShape(0, 3)) { Text("跟隨系統") }
+                    SegmentedButton(selected = themeMode == ThemeMode.LIGHT, onClick = { onThemeModeChange(ThemeMode.LIGHT) }, shape = SegmentedButtonDefaults.itemShape(1, 3)) { Text("亮色") }
+                    SegmentedButton(selected = themeMode == ThemeMode.DARK, onClick = { onThemeModeChange(ThemeMode.DARK) }, shape = SegmentedButtonDefaults.itemShape(2, 3)) { Text("深色") }
+                }
+            }
+
+            HorizontalDivider()
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("語音輸入", fontWeight = FontWeight.SemiBold)
                 Text(
                     "Groq API Key（用於語音輸入的語意解析。留空的話，語音輸入只會把辨識出的文字放進備註欄位，不會自動分欄位。金鑰只存在這台裝置上。）",
                     style = MaterialTheme.typography.bodySmall,
@@ -549,16 +599,68 @@ private fun SettingsDialog(
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Button(onClick = { onSaveApiKey(apiKey.trim()) }, modifier = Modifier.align(Alignment.End)) { Text("儲存") }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onSave(apiKey.trim())
-                onDismiss()
-            }) { Text("儲存") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
+
+            HorizontalDivider()
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("備份與還原", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "把所有記帳資料匯出成一個檔案，可以自行存到 Google 雲端硬碟、LINE 或本機。換手機或重灌前建議先匯出備份。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val filename = "loyu-ledger-backup-${SimpleDateFormat("yyyyMMdd", Locale.TAIWAN).format(Date())}.json"
+                            exportLauncher.launch(filename)
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("匯出備份") }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("匯入還原") }
+                }
+            }
+
+            HorizontalDivider()
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("關於", fontWeight = FontWeight.SemiBold)
+                Text("有魚記帳（LoyuLedger）v0.1.0 · 開發中", style = MaterialTheme.typography.bodySmall)
+            }
+
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("關閉") }
+        }
+    }
+
+    val importUri = pendingImportUri
+    if (importUri != null) {
+        AlertDialog(
+            onDismissRequest = { pendingImportUri = null },
+            title = { Text("確定要匯入還原嗎？") },
+            text = { Text("匯入將會覆蓋目前所有本機資料（帳戶、分類、交易紀錄），且無法復原。建議先匯出目前的資料備份。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingImportUri = null
+                    scope.launch {
+                        runCatching {
+                            val json = context.contentResolver.openInputStream(importUri)?.bufferedReader()?.use { it.readText() }
+                                ?: throw IllegalStateException("empty file")
+                            onImportBackup(json)
+                        }.onSuccess {
+                            Toast.makeText(context, "匯入完成", Toast.LENGTH_SHORT).show()
+                        }.onFailure {
+                            Toast.makeText(context, "備份檔案格式錯誤，匯入失敗", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }) { Text("確定匯入") }
+            },
+            dismissButton = { TextButton(onClick = { pendingImportUri = null }) { Text("取消") } },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

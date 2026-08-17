@@ -3,6 +3,7 @@ package com.loyu.ledger.data.local
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -11,9 +12,34 @@ interface LedgerDao {
     @Insert suspend fun insertAccount(account: AccountEntity): Long
     @Insert suspend fun insertCategory(category: CategoryEntity): Long
     @Insert suspend fun insertTransaction(transaction: TransactionEntity): Long
+    @Insert suspend fun insertAccounts(accounts: List<AccountEntity>)
+    @Insert suspend fun insertCategories(categories: List<CategoryEntity>)
+    @Insert suspend fun insertTransactions(transactions: List<TransactionEntity>)
     @Update suspend fun updateTransaction(transaction: TransactionEntity)
     @Update suspend fun updateAccount(account: AccountEntity)
     @Update suspend fun updateCategory(category: CategoryEntity)
+
+    @Query("SELECT * FROM accounts") suspend fun getAllAccountsOnce(): List<AccountEntity>
+    @Query("SELECT * FROM categories") suspend fun getAllCategoriesOnce(): List<CategoryEntity>
+    @Query("SELECT * FROM transactions") suspend fun getAllTransactionsOnce(): List<TransactionEntity>
+
+    @Query("DELETE FROM transactions") suspend fun deleteAllTransactions()
+    @Query("DELETE FROM accounts") suspend fun deleteAllAccounts()
+    @Query("DELETE FROM categories") suspend fun deleteAllCategories()
+
+    @Transaction
+    suspend fun replaceAllData(
+        accounts: List<AccountEntity>,
+        categories: List<CategoryEntity>,
+        transactions: List<TransactionEntity>,
+    ) {
+        deleteAllTransactions()
+        deleteAllAccounts()
+        deleteAllCategories()
+        insertAccounts(accounts)
+        insertCategories(categories)
+        insertTransactions(transactions)
+    }
 
     @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id")
     fun observeAccounts(): Flow<List<AccountEntity>>
