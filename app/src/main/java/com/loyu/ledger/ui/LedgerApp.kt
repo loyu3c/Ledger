@@ -125,13 +125,18 @@ fun LedgerApp(vm: LedgerViewModel) {
                 }
             }
 
+            val monthStart = selectedMonth.withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val monthEnd = selectedMonth.withDayOfMonth(1).plusMonths(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val monthDebts = debts.filter { it.occurredAt in monthStart until monthEnd }
+
             if (viewMode == ViewMode.LIST) {
                 item {
                     SummaryRow(income = income, expense = expense)
                 }
-                if (transactions.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
-                items(transactions, key = { it.id }) { row ->
-                    TransactionListItem(row = row, onClick = { editingRow = row })
+                val timeline = buildTimeline(transactions, monthDebts)
+                if (timeline.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
+                items(timeline, key = { it.key }) { entry ->
+                    TimelineListItem(entry = entry, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
                     HorizontalDivider()
                 }
             } else {
@@ -144,10 +149,14 @@ fun LedgerApp(vm: LedgerViewModel) {
                         transactions.filter { it.type == TransactionType.EXPENSE }
                             .map { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }.toSet()
                     }
+                    val debtDays = remember(monthDebts) {
+                        monthDebts.map { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() }.toSet()
+                    }
                     MonthCalendar(
                         month = selectedMonth,
                         incomeDays = incomeDays,
                         expenseDays = expenseDays,
+                        debtDays = debtDays,
                         selectedDay = selectedDay,
                         onSelectDay = { selectedDay = it },
                     )
@@ -157,16 +166,18 @@ fun LedgerApp(vm: LedgerViewModel) {
                     item { Text("點選上方日期查看當天的收支明細。") }
                 } else {
                     val dayTransactions = transactions.filter { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() == day }
+                    val dayDebts = monthDebts.filter { Instant.ofEpochMilli(it.occurredAt).atZone(zone).toLocalDate() == day }
                     val dayExpense = dayTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
                     val dayIncome = dayTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
                     item {
                         SummaryRow(income = dayIncome, expense = dayExpense)
                     }
-                    if (dayTransactions.isEmpty()) {
+                    val dayTimeline = buildTimeline(dayTransactions, dayDebts)
+                    if (dayTimeline.isEmpty()) {
                         item { Text("這天還沒有紀錄。") }
                     } else {
-                        items(dayTransactions, key = { it.id }) { row ->
-                            TransactionListItem(row = row, onClick = { editingRow = row })
+                        items(dayTimeline, key = { it.key }) { entry ->
+                            TimelineListItem(entry = entry, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
                             HorizontalDivider()
                         }
                     }
@@ -283,6 +294,7 @@ private fun SummaryRow(income: Long, expense: Long) {
 
 private val IncomeGreen = Color(0xFF2E7D32)
 private val ExpenseRed = Color(0xFFC62828)
+private val DebtBlue = Color(0xFF1565C0)
 
 @Composable
 private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
@@ -298,6 +310,47 @@ private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
     )
 }
 
+private sealed class TimelineEntry(val occurredAt: Long, val key: String) {
+    class Txn(val row: TransactionRow) : TimelineEntry(row.occurredAt, "t${row.id}")
+    class Debt(val debt: DebtEntity) : TimelineEntry(debt.occurredAt, "d${debt.id}")
+}
+
+private fun buildTimeline(transactions: List<TransactionRow>, debts: List<DebtEntity>): List<TimelineEntry> =
+    (transactions.map { TimelineEntry.Txn(it) } + debts.map { TimelineEntry.Debt(it) })
+        .sortedByDescending { it.occurredAt }
+
+@Composable
+private fun TimelineListItem(
+    entry: TimelineEntry,
+    onClickTransaction: (TransactionRow) -> Unit,
+    onClickDebt: (DebtEntity) -> Unit,
+) {
+    when (entry) {
+        is TimelineEntry.Txn -> TransactionListItem(row = entry.row, onClick = { onClickTransaction(entry.row) })
+        is TimelineEntry.Debt -> DebtListItem(debt = entry.debt, onClick = { onClickDebt(entry.debt) })
+    }
+}
+
+@Composable
+private fun DebtListItem(debt: DebtEntity, onClick: () -> Unit) {
+    val directionLabel = if (debt.direction == DebtDirection.LEND) "借出/代墊" else "借入"
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        headlineContent = { Text(debt.counterparty) },
+        supportingContent = {
+            Text(
+                buildString {
+                    append("🤝 $directionLabel · ${formatDate(debt.occurredAt)}")
+                    if (debt.isSettled) append(" · 已還")
+                }
+            )
+        },
+        trailingContent = {
+            Text(money(debt.amount), fontWeight = FontWeight.SemiBold, color = DebtBlue)
+        },
+    )
+}
+
 private val weekdayLabels = listOf("日", "一", "二", "三", "四", "五", "六")
 
 @Composable
@@ -305,6 +358,7 @@ private fun MonthCalendar(
     month: LocalDate,
     incomeDays: Set<LocalDate>,
     expenseDays: Set<LocalDate>,
+    debtDays: Set<LocalDate>,
     selectedDay: LocalDate?,
     onSelectDay: (LocalDate) -> Unit,
 ) {
@@ -355,6 +409,7 @@ private fun MonthCalendar(
                                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Box(Modifier.size(4.dp).background(if (date in incomeDays) IncomeGreen else Color.Transparent, CircleShape))
                                     Box(Modifier.size(4.dp).background(if (date in expenseDays) ExpenseRed else Color.Transparent, CircleShape))
+                                    Box(Modifier.size(4.dp).background(if (date in debtDays) DebtBlue else Color.Transparent, CircleShape))
                                 }
                             }
                         }
