@@ -35,6 +35,7 @@ class LedgerRepository(private val dao: LedgerDao) {
         categoryId: Long,
         merchant: String,
         note: String,
+        occurredAt: Long,
     ) {
         require(amount > 0)
         dao.insertTransaction(
@@ -45,6 +46,7 @@ class LedgerRepository(private val dao: LedgerDao) {
                 categoryId = categoryId,
                 merchant = merchant.trim(),
                 note = note.trim(),
+                occurredAt = occurredAt,
             )
         )
     }
@@ -57,6 +59,7 @@ class LedgerRepository(private val dao: LedgerDao) {
         categoryId: Long,
         merchant: String,
         note: String,
+        occurredAt: Long,
     ) {
         require(amount > 0)
         val existing = dao.getTransaction(id) ?: return
@@ -68,6 +71,7 @@ class LedgerRepository(private val dao: LedgerDao) {
                 categoryId = categoryId,
                 merchant = merchant.trim(),
                 note = note.trim(),
+                occurredAt = occurredAt,
                 updatedAt = System.currentTimeMillis(),
             )
         )

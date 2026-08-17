@@ -11,10 +11,10 @@ import com.loyu.ledger.ui.theme.LoyuLedgerTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val repository = (application as LedgerApplication).repository
+        val app = application as LedgerApplication
         setContent {
             LoyuLedgerTheme {
-                val vm: LedgerViewModel = viewModel(factory = LedgerViewModel.Factory(repository))
+                val vm: LedgerViewModel = viewModel(factory = LedgerViewModel.Factory(app.repository, app.settingsRepository))
                 LedgerApp(vm)
             }
         }

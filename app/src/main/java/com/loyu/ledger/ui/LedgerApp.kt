@@ -1,5 +1,10 @@
 package com.loyu.ledger.ui
 
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,8 +23,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,11 +36,14 @@ import com.loyu.ledger.data.local.CategoryEntity
 import com.loyu.ledger.data.local.CategoryTotal
 import com.loyu.ledger.data.local.TransactionRow
 import com.loyu.ledger.data.local.TransactionType
+import com.loyu.ledger.data.remote.VoiceTransactionResult
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.*
 
@@ -52,11 +62,13 @@ fun LedgerApp(vm: LedgerViewModel) {
     val selectedMonth by vm.selectedMonth.collectAsState()
     val expenseByCategory by vm.expenseByCategory.collectAsState()
     val incomeByCategory by vm.incomeByCategory.collectAsState()
+    val groqApiKey by vm.groqApiKey.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     var editingRow by remember { mutableStateOf<TransactionRow?>(null) }
     var showAccounts by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
     var showStatistics by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
     var selectedDay by remember(selectedMonth) { mutableStateOf<LocalDate?>(null) }
     val zone = remember { ZoneId.systemDefault() }
@@ -69,6 +81,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                     TextButton(onClick = { showStatistics = true }) { Text("統計") }
                     TextButton(onClick = { showCategories = true }) { Text("分類") }
                     TextButton(onClick = { showAccounts = true }) { Text("帳戶") }
+                    TextButton(onClick = { showSettings = true }) { Text("設定") }
                 },
             )
         },
@@ -156,11 +169,11 @@ fun LedgerApp(vm: LedgerViewModel) {
             categories = categories,
             existing = editing,
             onDismiss = { showAdd = false; editingRow = null },
-            onSave = { type, amount, accountId, categoryId, merchant, note ->
+            onSave = { type, amount, accountId, categoryId, merchant, note, occurredAt ->
                 if (editing != null) {
-                    vm.updateTransaction(editing.id, type, amount, accountId, categoryId, merchant, note)
+                    vm.updateTransaction(editing.id, type, amount, accountId, categoryId, merchant, note, occurredAt)
                 } else {
-                    vm.addTransaction(type, amount, accountId, categoryId, merchant, note)
+                    vm.addTransaction(type, amount, accountId, categoryId, merchant, note, occurredAt)
                 }
                 showAdd = false
                 editingRow = null
@@ -172,6 +185,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                     editingRow = null
                 }
             } else null,
+            onVoiceInput = { text -> vm.parseVoiceTransaction(text, categories.map { it.name }) },
         )
     }
 
@@ -201,6 +215,14 @@ fun LedgerApp(vm: LedgerViewModel) {
             expenseByCategory = expenseByCategory,
             incomeByCategory = incomeByCategory,
             onDismiss = { showStatistics = false },
+        )
+    }
+
+    if (showSettings) {
+        SettingsDialog(
+            currentApiKey = groqApiKey,
+            onDismiss = { showSettings = false },
+            onSave = { vm.setGroqApiKey(it) },
         )
     }
 }
@@ -308,19 +330,48 @@ private fun TransactionSheet(
     categories: List<com.loyu.ledger.data.local.CategoryEntity>,
     existing: TransactionRow?,
     onDismiss: () -> Unit,
-    onSave: (TransactionType, Long, Long, Long, String, String) -> Unit,
+    onSave: (TransactionType, Long, Long, Long, String, String, Long) -> Unit,
     onDelete: (() -> Unit)?,
+    onVoiceInput: suspend (String) -> VoiceTransactionResult?,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var type by remember { mutableStateOf(existing?.type ?: TransactionType.EXPENSE) }
     var amountText by remember { mutableStateOf(existing?.amount?.toString() ?: "") }
     var merchant by remember { mutableStateOf(existing?.merchant ?: "") }
     var note by remember { mutableStateOf(existing?.note ?: "") }
+    var occurredAtMillis by remember { mutableStateOf(existing?.occurredAt ?: System.currentTimeMillis()) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var voiceProcessing by remember { mutableStateOf(false) }
     val filteredCategories = categories.filter { it.type == type }
     var accountId by remember(accounts) { mutableStateOf(existing?.accountId ?: accounts.firstOrNull()?.id) }
     var categoryId by remember(type, filteredCategories) {
         mutableStateOf(existing?.categoryId?.takeIf { id -> filteredCategories.any { it.id == id } } ?: filteredCategories.firstOrNull()?.id)
     }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val spokenText = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (!spokenText.isNullOrBlank()) {
+            voiceProcessing = true
+            scope.launch {
+                val parsed = onVoiceInput(spokenText)
+                if (parsed != null) {
+                    parsed.type?.let { type = it }
+                    parsed.amount?.let { amountText = it.toString() }
+                    if (parsed.merchant.isNotBlank()) merchant = parsed.merchant
+                    if (parsed.note.isNotBlank()) note = if (note.isBlank()) parsed.note else "$note ${parsed.note}"
+                    val effectiveType = parsed.type ?: type
+                    categories.firstOrNull { it.type == effectiveType && it.name == parsed.categoryName }?.let { categoryId = it.id }
+                } else {
+                    note = if (note.isBlank()) spokenText else "$note $spokenText"
+                }
+                voiceProcessing = false
+            }
+        }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -332,6 +383,25 @@ private fun TransactionSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(if (existing == null) "新增記帳" else "編輯記帳", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            OutlinedButton(
+                onClick = {
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-TW")
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, "說出這筆記帳的內容")
+                    }
+                    if (intent.resolveActivity(context.packageManager) != null) {
+                        speechLauncher.launch(intent)
+                    } else {
+                        Toast.makeText(context, "找不到可用的語音輸入服務", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                enabled = !voiceProcessing,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (voiceProcessing) "辨識中…" else "🎤 語音輸入") }
+            OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("日期：${formatDateOnly(occurredAtMillis)}")
+            }
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(selected = type == TransactionType.EXPENSE, onClick = { type = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
                 SegmentedButton(selected = type == TransactionType.INCOME, onClick = { type = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
@@ -370,7 +440,7 @@ private fun TransactionSheet(
                 Button(
                     onClick = {
                         val amount = amountText.toLongOrNull() ?: return@Button
-                        onSave(type, amount, accountId ?: return@Button, categoryId ?: return@Button, merchant, note)
+                        onSave(type, amount, accountId ?: return@Button, categoryId ?: return@Button, merchant, note, occurredAtMillis)
                     },
                     enabled = (amountText.toLongOrNull() ?: 0) > 0 && accountId != null && categoryId != null,
                     modifier = Modifier.weight(1f),
@@ -393,6 +463,63 @@ private fun TransactionSheet(
             dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") } },
         )
     }
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = occurredAtMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { pickedUtcMillis ->
+                        val pickedDate = Instant.ofEpochMilli(pickedUtcMillis).atZone(ZoneOffset.UTC).toLocalDate()
+                        val existingTime = Instant.ofEpochMilli(occurredAtMillis).atZone(ZoneId.systemDefault()).toLocalTime()
+                        occurredAtMillis = pickedDate.atTime(existingTime).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    }
+                    showDatePicker = false
+                }) { Text("確定") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("取消") } },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+}
+
+@Composable
+private fun SettingsDialog(
+    currentApiKey: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var apiKey by remember { mutableStateOf(currentApiKey) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("設定") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Groq API Key（用於語音輸入的語意解析。留空的話，語音輸入只會把辨識出的文字放進備註欄位，不會自動分欄位。金鑰只存在這台裝置上。）",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text("Groq API Key") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(apiKey.trim())
+                onDismiss()
+            }) { Text("儲存") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -681,3 +808,4 @@ private fun monthLabel(month: LocalDate): String = month.format(monthLabelFormat
 
 private fun money(value: Long): String = "NT$ ${NumberFormat.getIntegerInstance(Locale.TAIWAN).format(value)}"
 private fun formatDate(epoch: Long): String = SimpleDateFormat("MM/dd HH:mm", Locale.TAIWAN).format(Date(epoch))
+private fun formatDateOnly(epoch: Long): String = SimpleDateFormat("yyyy/MM/dd", Locale.TAIWAN).format(Date(epoch))
