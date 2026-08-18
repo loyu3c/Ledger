@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
@@ -278,6 +279,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     if (showAddDebt) {
         DebtFormDialog(
             defaultDirection = DebtDirection.LEND,
+            knownCounterparties = remember(debts) { debts.map { it.counterparty }.distinct() },
             onDismiss = { showAddDebt = false },
             onSave = { direction, counterparty, amount, occurredAt, dueDate, note ->
                 vm.addDebt(direction, counterparty, amount, occurredAt, dueDate, note)
@@ -845,6 +847,7 @@ private fun DebtManagementSheet(
     if (showAddForm) {
         DebtFormDialog(
             defaultDirection = filterDirection,
+            knownCounterparties = remember(debts) { debts.map { it.counterparty }.distinct() },
             onDismiss = { showAddForm = false },
             onSave = { direction, counterparty, amount, occurredAt, dueDate, note ->
                 onAdd(direction, counterparty, amount, occurredAt, dueDate, note)
@@ -868,15 +871,21 @@ private fun DebtManagementSheet(
 @Composable
 private fun DebtFormDialog(
     defaultDirection: DebtDirection,
+    knownCounterparties: List<String>,
     onDismiss: () -> Unit,
     onSave: (DebtDirection, String, Long, Long, Long?, String) -> Unit,
 ) {
     var direction by remember { mutableStateOf(defaultDirection) }
     var counterparty by remember { mutableStateOf("") }
+    var showCounterpartySuggestions by remember { mutableStateOf(false) }
     var amountText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var occurredAtMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
+    val counterpartySuggestions = remember(counterparty, knownCounterparties) {
+        if (counterparty.isBlank()) emptyList()
+        else knownCounterparties.filter { it.contains(counterparty, ignoreCase = true) && it != counterparty }
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
@@ -892,13 +901,27 @@ private fun DebtFormDialog(
                 SegmentedButton(selected = direction == DebtDirection.LEND, onClick = { direction = DebtDirection.LEND }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("借出/代墊") }
                 SegmentedButton(selected = direction == DebtDirection.BORROW, onClick = { direction = DebtDirection.BORROW }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("借入") }
             }
-            OutlinedTextField(
-                value = counterparty,
-                onValueChange = { counterparty = it },
-                label = { Text("對象") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Box(Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = counterparty,
+                    onValueChange = { counterparty = it; showCounterpartySuggestions = true },
+                    label = { Text("對象") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                DropdownMenu(
+                    expanded = showCounterpartySuggestions && counterpartySuggestions.isNotEmpty(),
+                    onDismissRequest = { showCounterpartySuggestions = false },
+                    properties = PopupProperties(focusable = false),
+                ) {
+                    counterpartySuggestions.forEach { name ->
+                        DropdownMenuItem(
+                            text = { Text(name) },
+                            onClick = { counterparty = name; showCounterpartySuggestions = false },
+                        )
+                    }
+                }
+            }
             OutlinedTextField(
                 value = amountText,
                 onValueChange = { amountText = it.filter(Char::isDigit) },
