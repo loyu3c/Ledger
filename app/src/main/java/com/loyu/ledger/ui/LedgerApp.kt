@@ -85,7 +85,10 @@ fun LedgerApp(vm: LedgerViewModel) {
     var showAddDebt by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
-    var selectedDay by remember(selectedMonth) { mutableStateOf<LocalDate?>(null) }
+    var selectedDay by remember(selectedMonth) {
+        val today = LocalDate.now()
+        mutableStateOf(if (selectedMonth == today.withDayOfMonth(1)) today else null)
+    }
     val zone = remember { ZoneId.systemDefault() }
 
     Scaffold(
