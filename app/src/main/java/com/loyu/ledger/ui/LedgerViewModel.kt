@@ -41,6 +41,7 @@ class LedgerViewModel(
     val allCategories = repository.allCategories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val debts = repository.debts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val accountNet = repository.accountNet.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val transactions = _selectedMonth.flatMapLatest { month ->
         val (start, end) = repository.monthRangeMillis(month)
@@ -89,12 +90,12 @@ class LedgerViewModel(
         viewModelScope.launch { repository.deleteTransaction(id) }
     }
 
-    fun addAccount(name: String, type: AccountType) {
-        viewModelScope.launch { repository.addAccount(name, type) }
+    fun addAccount(name: String, type: AccountType, openingBalance: Long) {
+        viewModelScope.launch { repository.addAccount(name, type, openingBalance) }
     }
 
-    fun updateAccount(id: Long, name: String, type: AccountType) {
-        viewModelScope.launch { repository.updateAccount(id, name, type) }
+    fun updateAccount(id: Long, name: String, type: AccountType, openingBalance: Long) {
+        viewModelScope.launch { repository.updateAccount(id, name, type, openingBalance) }
     }
 
     fun setAccountActive(id: Long, isActive: Boolean) {

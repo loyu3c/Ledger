@@ -94,3 +94,8 @@ data class CategoryTotal(
     val categoryIcon: String,
     val total: Long,
 )
+
+data class AccountNet(
+    val accountId: Long,
+    val net: Long,
+)

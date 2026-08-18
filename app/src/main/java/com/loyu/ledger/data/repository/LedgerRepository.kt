@@ -18,6 +18,7 @@ class LedgerRepository(private val dao: LedgerDao) {
     val categories = dao.observeCategories()
     val allCategories = dao.observeAllCategories()
     val transactions = dao.observeTransactions()
+    val accountNet = dao.observeAccountNet()
     val debts = dao.observeDebts()
 
     fun monthRangeMillis(now: LocalDate = LocalDate.now()): Pair<Long, Long> {
@@ -85,15 +86,15 @@ class LedgerRepository(private val dao: LedgerDao) {
         dao.deleteTransaction(id)
     }
 
-    suspend fun addAccount(name: String, type: AccountType) {
+    suspend fun addAccount(name: String, type: AccountType, openingBalance: Long) {
         require(name.isNotBlank())
-        dao.insertAccount(AccountEntity(name = name.trim(), type = type))
+        dao.insertAccount(AccountEntity(name = name.trim(), type = type, openingBalance = openingBalance))
     }
 
-    suspend fun updateAccount(id: Long, name: String, type: AccountType) {
+    suspend fun updateAccount(id: Long, name: String, type: AccountType, openingBalance: Long) {
         require(name.isNotBlank())
         val existing = dao.getAccount(id) ?: return
-        dao.updateAccount(existing.copy(name = name.trim(), type = type))
+        dao.updateAccount(existing.copy(name = name.trim(), type = type, openingBalance = openingBalance))
     }
 
     suspend fun setAccountActive(id: Long, isActive: Boolean) {
