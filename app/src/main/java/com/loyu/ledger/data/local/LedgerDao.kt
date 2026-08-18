@@ -126,4 +126,13 @@ interface LedgerDao {
 
     @Query("SELECT COUNT(*) FROM accounts")
     suspend fun accountCount(): Int
+
+    @Query(
+        """
+        SELECT accountId, COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE -amount END), 0) AS net
+        FROM transactions
+        GROUP BY accountId
+        """
+    )
+    fun observeAccountNet(): Flow<List<AccountNet>>
 }

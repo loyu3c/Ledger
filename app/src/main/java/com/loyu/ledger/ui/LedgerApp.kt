@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.loyu.ledger.data.local.AccountEntity
+import com.loyu.ledger.data.local.AccountNet
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
 import com.loyu.ledger.data.local.CategoryTotal
@@ -65,6 +66,7 @@ private enum class ViewMode { LIST, CALENDAR }
 fun LedgerApp(vm: LedgerViewModel) {
     val accounts by vm.accounts.collectAsState()
     val allAccounts by vm.allAccounts.collectAsState()
+    val accountNet by vm.accountNet.collectAsState()
     val categories by vm.categories.collectAsState()
     val allCategories by vm.allCategories.collectAsState()
     val transactions by vm.transactions.collectAsState()
@@ -239,8 +241,8 @@ fun LedgerApp(vm: LedgerViewModel) {
         AccountManagementSheet(
             accounts = allAccounts,
             onDismiss = { showAccounts = false },
-            onAdd = { name, type -> vm.addAccount(name, type) },
-            onEdit = { id, name, type -> vm.updateAccount(id, name, type) },
+            onAdd = { name, type, openingBalance -> vm.addAccount(name, type, openingBalance) },
+            onEdit = { id, name, type, openingBalance -> vm.updateAccount(id, name, type, openingBalance) },
             onToggleActive = { id, isActive -> vm.setAccountActive(id, isActive) },
         )
     }
@@ -281,6 +283,8 @@ fun LedgerApp(vm: LedgerViewModel) {
     if (showAssetsLiabilities) {
         AssetsLiabilitiesSheet(
             debts = debts,
+            accounts = allAccounts.filter { it.isActive },
+            accountNet = accountNet,
             onDismiss = { showAssetsLiabilities = false },
             onOpenDebts = { showAssetsLiabilities = false; showDebts = true },
         )
@@ -792,17 +796,38 @@ private fun SettingsSheet(
     }
 }
 
+/**
+ * An account's current value: opening balance plus net (income - expense) for cash/bank/
+ * e-wallet accounts, or opening balance minus net for credit cards, where net going more
+ * negative (more spending) increases what's owed.
+ */
+private fun accountValue(account: AccountEntity, netByAccountId: Map<Long, Long>): Long {
+    val net = netByAccountId[account.id] ?: 0L
+    return if (account.type == AccountType.CREDIT_CARD) account.openingBalance - net else account.openingBalance + net
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AssetsLiabilitiesSheet(
     debts: List<DebtEntity>,
+    accounts: List<AccountEntity>,
+    accountNet: List<AccountNet>,
     onDismiss: () -> Unit,
     onOpenDebts: () -> Unit,
 ) {
-    val assets = debts.filter { it.direction == DebtDirection.LEND }
-    val liabilities = debts.filter { it.direction == DebtDirection.BORROW }
-    val totalAssets = assets.filter { !it.isSettled }.sumOf { it.amount }
-    val totalLiabilities = liabilities.filter { !it.isSettled }.sumOf { it.amount }
+    val netByAccountId = remember(accountNet) { accountNet.associate { it.accountId to it.net } }
+    val assetAccounts = accounts.filter { it.type != AccountType.CREDIT_CARD }
+    val liabilityAccounts = accounts.filter { it.type == AccountType.CREDIT_CARD }
+    val accountAssetsTotal = assetAccounts.sumOf { accountValue(it, netByAccountId) }
+    val accountLiabilitiesTotal = liabilityAccounts.sumOf { accountValue(it, netByAccountId) }
+
+    val debtAssets = debts.filter { it.direction == DebtDirection.LEND }
+    val debtLiabilities = debts.filter { it.direction == DebtDirection.BORROW }
+    val debtAssetsTotal = debtAssets.filter { !it.isSettled }.sumOf { it.amount }
+    val debtLiabilitiesTotal = debtLiabilities.filter { !it.isSettled }.sumOf { it.amount }
+
+    val totalAssets = accountAssetsTotal + debtAssetsTotal
+    val totalLiabilities = accountLiabilitiesTotal + debtLiabilitiesTotal
     val netColor = if (totalAssets >= totalLiabilities) IncomeGreen else ExpenseRed
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -816,32 +841,52 @@ private fun AssetsLiabilitiesSheet(
             Text("資產與負債", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ColoredSummaryLine("資產（未還的借出/代墊）", money(totalAssets), IncomeGreen)
-                    ColoredSummaryLine("負債（未還的借入）", money(totalLiabilities), ExpenseRed)
+                    ColoredSummaryLine("資產（帳戶 + 未還的借出/代墊）", money(totalAssets), IncomeGreen)
+                    ColoredSummaryLine("負債（信用卡 + 未還的借入）", money(totalLiabilities), ExpenseRed)
                     HorizontalDivider()
-                    ColoredSummaryLine("淨值影響", money(totalAssets - totalLiabilities), netColor, bold = true)
+                    ColoredSummaryLine("淨值", money(totalAssets - totalLiabilities), netColor, bold = true)
                 }
             }
             Text(
-                "借貸紀錄會影響資產與負債，但不計入收入/支出統計；已還清的紀錄仍保留在下方，以灰色文字呈現。",
+                "現金/銀行/電子錢包帳戶算資產，信用卡算負債；借貸紀錄也會影響資產與負債，但不計入收入/支出統計。已還清的借貸紀錄仍保留在下方，以灰色文字呈現。",
                 style = MaterialTheme.typography.bodySmall,
             )
 
-            Text("資產明細（借出/代墊）", fontWeight = FontWeight.SemiBold)
-            if (assets.isEmpty()) {
-                Text("目前沒有資產紀錄。", style = MaterialTheme.typography.bodySmall)
+            Text("帳戶（資產）", fontWeight = FontWeight.SemiBold)
+            if (assetAccounts.isEmpty()) {
+                Text("目前沒有現金/銀行/電子錢包帳戶。", style = MaterialTheme.typography.bodySmall)
             } else {
-                assets.forEach { debt ->
+                assetAccounts.forEach { account ->
+                    AccountBalanceRow(account, money(accountValue(account, netByAccountId)), IncomeGreen)
+                    HorizontalDivider()
+                }
+            }
+
+            Text("帳戶（負債）", fontWeight = FontWeight.SemiBold)
+            if (liabilityAccounts.isEmpty()) {
+                Text("目前沒有信用卡帳戶。", style = MaterialTheme.typography.bodySmall)
+            } else {
+                liabilityAccounts.forEach { account ->
+                    AccountBalanceRow(account, money(accountValue(account, netByAccountId)), ExpenseRed)
+                    HorizontalDivider()
+                }
+            }
+
+            Text("借貸（資產）", fontWeight = FontWeight.SemiBold)
+            if (debtAssets.isEmpty()) {
+                Text("目前沒有借出/代墊紀錄。", style = MaterialTheme.typography.bodySmall)
+            } else {
+                debtAssets.forEach { debt ->
                     DebtListItem(debt = debt, onClick = onOpenDebts)
                     HorizontalDivider()
                 }
             }
 
-            Text("負債明細（借入）", fontWeight = FontWeight.SemiBold)
-            if (liabilities.isEmpty()) {
-                Text("目前沒有負債紀錄。", style = MaterialTheme.typography.bodySmall)
+            Text("借貸（負債）", fontWeight = FontWeight.SemiBold)
+            if (debtLiabilities.isEmpty()) {
+                Text("目前沒有借入紀錄。", style = MaterialTheme.typography.bodySmall)
             } else {
-                liabilities.forEach { debt ->
+                debtLiabilities.forEach { debt ->
                     DebtListItem(debt = debt, onClick = onOpenDebts)
                     HorizontalDivider()
                 }
@@ -850,6 +895,15 @@ private fun AssetsLiabilitiesSheet(
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("關閉") }
         }
     }
+}
+
+@Composable
+private fun AccountBalanceRow(account: AccountEntity, value: String, color: Color) {
+    ListItem(
+        headlineContent = { Text(account.name) },
+        supportingContent = { Text(accountTypeLabel(account.type)) },
+        trailingContent = { Text(value, fontWeight = FontWeight.SemiBold, color = color) },
+    )
 }
 
 @Composable
@@ -1060,8 +1114,8 @@ private fun DebtFormDialog(
 private fun AccountManagementSheet(
     accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onAdd: (String, AccountType) -> Unit,
-    onEdit: (Long, String, AccountType) -> Unit,
+    onAdd: (String, AccountType, Long) -> Unit,
+    onEdit: (Long, String, AccountType, Long) -> Unit,
     onToggleActive: (Long, Boolean) -> Unit,
 ) {
     var editingAccount by remember { mutableStateOf<AccountEntity?>(null) }
@@ -1095,14 +1149,14 @@ private fun AccountManagementSheet(
         AccountFormDialog(
             existing = null,
             onDismiss = { showAddForm = false },
-            onSave = { name, type -> onAdd(name, type); showAddForm = false },
+            onSave = { name, type, openingBalance -> onAdd(name, type, openingBalance); showAddForm = false },
         )
     }
     editingAccount?.let { account ->
         AccountFormDialog(
             existing = account,
             onDismiss = { editingAccount = null },
-            onSave = { name, type -> onEdit(account.id, name, type); editingAccount = null },
+            onSave = { name, type, openingBalance -> onEdit(account.id, name, type, openingBalance); editingAccount = null },
         )
     }
 }
@@ -1111,10 +1165,11 @@ private fun AccountManagementSheet(
 private fun AccountFormDialog(
     existing: AccountEntity?,
     onDismiss: () -> Unit,
-    onSave: (String, AccountType) -> Unit,
+    onSave: (String, AccountType, Long) -> Unit,
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var type by remember { mutableStateOf(existing?.type ?: AccountType.CASH) }
+    var openingBalanceText by remember { mutableStateOf(existing?.openingBalance?.toString() ?: "0") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1128,10 +1183,27 @@ private fun AccountFormDialog(
                         FilterChip(selected = type == t, onClick = { type = t }, label = { Text(accountTypeLabel(t)) })
                     }
                 }
+                OutlinedTextField(
+                    value = openingBalanceText,
+                    onValueChange = { openingBalanceText = it.filter(Char::isDigit) },
+                    label = { Text(if (type == AccountType.CREDIT_CARD) "目前欠款" else "目前餘額") },
+                    prefix = { Text("NT$ ") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    if (type == AccountType.CREDIT_CARD) "會被算成負債；之後刷卡消費會讓欠款增加。"
+                    else "會被算成資產；之後的收入/支出會從這個金額增減。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name.trim(), type) }, enabled = name.isNotBlank()) { Text("儲存") }
+            TextButton(
+                onClick = { onSave(name.trim(), type, openingBalanceText.toLongOrNull() ?: 0) },
+                enabled = name.isNotBlank(),
+            ) { Text("儲存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
