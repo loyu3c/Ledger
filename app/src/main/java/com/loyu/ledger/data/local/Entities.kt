@@ -72,6 +72,8 @@ data class DebtEntity(
     val note: String = "",
     val isSettled: Boolean = false,
     val settledAt: Long? = null,
+    val accountId: Long? = null,
+    val settledAccountId: Long? = null,
 )
 
 data class TransactionRow(

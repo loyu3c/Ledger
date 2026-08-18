@@ -271,11 +271,12 @@ fun LedgerApp(vm: LedgerViewModel) {
     if (showDebts) {
         DebtManagementSheet(
             debts = debts,
+            accounts = accounts,
             onDismiss = { showDebts = false },
-            onAdd = { direction, counterparty, amount, occurredAt, dueDate, note ->
-                vm.addDebt(direction, counterparty, amount, occurredAt, dueDate, note)
+            onAdd = { direction, counterparty, amount, occurredAt, dueDate, note, accountId ->
+                vm.addDebt(direction, counterparty, amount, occurredAt, dueDate, note, accountId)
             },
-            onSettle = { vm.settleDebt(it) },
+            onSettle = { id, accountId -> vm.settleDebt(id, accountId) },
             onDelete = { vm.deleteDebt(it) },
         )
     }
@@ -294,9 +295,10 @@ fun LedgerApp(vm: LedgerViewModel) {
         DebtFormDialog(
             defaultDirection = DebtDirection.LEND,
             knownCounterparties = remember(debts) { debts.map { it.counterparty }.distinct() },
+            accounts = accounts,
             onDismiss = { showAddDebt = false },
-            onSave = { direction, counterparty, amount, occurredAt, dueDate, note ->
-                vm.addDebt(direction, counterparty, amount, occurredAt, dueDate, note)
+            onSave = { direction, counterparty, amount, occurredAt, dueDate, note, accountId ->
+                vm.addDebt(direction, counterparty, amount, occurredAt, dueDate, note, accountId)
                 showAddDebt = false
             },
         )
@@ -918,14 +920,16 @@ private fun ColoredSummaryLine(label: String, value: String, color: Color, bold:
 @Composable
 private fun DebtManagementSheet(
     debts: List<DebtEntity>,
+    accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onAdd: (DebtDirection, String, Long, Long, Long?, String) -> Unit,
-    onSettle: (Long) -> Unit,
+    onAdd: (DebtDirection, String, Long, Long, Long?, String, Long) -> Unit,
+    onSettle: (Long, Long) -> Unit,
     onDelete: (Long) -> Unit,
 ) {
     var filterDirection by remember { mutableStateOf(DebtDirection.LEND) }
     var showAddForm by remember { mutableStateOf(false) }
     var debtPendingDelete by remember { mutableStateOf<DebtEntity?>(null) }
+    var debtPendingSettle by remember { mutableStateOf<DebtEntity?>(null) }
     val filtered = debts.filter { it.direction == filterDirection && !it.isSettled }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -965,7 +969,7 @@ private fun DebtManagementSheet(
                                     color = if (debt.isSettled) mutedColor else ExpenseRed,
                                 )
                                 if (!debt.isSettled) {
-                                    TextButton(onClick = { onSettle(debt.id) }) { Text("標記已還") }
+                                    TextButton(onClick = { debtPendingSettle = debt }) { Text("標記已還") }
                                 }
                                 TextButton(onClick = { debtPendingDelete = debt }) { Text("刪除") }
                             }
@@ -982,9 +986,10 @@ private fun DebtManagementSheet(
         DebtFormDialog(
             defaultDirection = filterDirection,
             knownCounterparties = remember(debts) { debts.map { it.counterparty }.distinct() },
+            accounts = accounts,
             onDismiss = { showAddForm = false },
-            onSave = { direction, counterparty, amount, occurredAt, dueDate, note ->
-                onAdd(direction, counterparty, amount, occurredAt, dueDate, note)
+            onSave = { direction, counterparty, amount, occurredAt, dueDate, note, accountId ->
+                onAdd(direction, counterparty, amount, occurredAt, dueDate, note, accountId)
                 showAddForm = false
             },
         )
@@ -999,6 +1004,35 @@ private fun DebtManagementSheet(
             dismissButton = { TextButton(onClick = { debtPendingDelete = null }) { Text("取消") } },
         )
     }
+
+    debtPendingSettle?.let { debt ->
+        var settleAccountId by remember(debt.id) { mutableStateOf(accounts.firstOrNull()?.id) }
+        AlertDialog(
+            onDismissRequest = { debtPendingSettle = null },
+            title = { Text("標記已還") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (debt.direction == DebtDirection.LEND) "錢收回哪個帳戶？" else "從哪個帳戶還款？")
+                    if (accounts.isEmpty()) {
+                        Text("請先到設定新增一個帳戶。", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            accounts.forEach { account ->
+                                FilterChip(selected = settleAccountId == account.id, onClick = { settleAccountId = account.id }, label = { Text(account.name) })
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { settleAccountId?.let { onSettle(debt.id, it) }; debtPendingSettle = null },
+                    enabled = settleAccountId != null,
+                ) { Text("確定") }
+            },
+            dismissButton = { TextButton(onClick = { debtPendingSettle = null }) { Text("取消") } },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1006,8 +1040,9 @@ private fun DebtManagementSheet(
 private fun DebtFormDialog(
     defaultDirection: DebtDirection,
     knownCounterparties: List<String>,
+    accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onSave: (DebtDirection, String, Long, Long, Long?, String) -> Unit,
+    onSave: (DebtDirection, String, Long, Long, Long?, String, Long) -> Unit,
 ) {
     var direction by remember { mutableStateOf(defaultDirection) }
     var counterparty by remember { mutableStateOf("") }
@@ -1016,6 +1051,7 @@ private fun DebtFormDialog(
     var note by remember { mutableStateOf("") }
     var occurredAtMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
+    var accountId by remember(accounts) { mutableStateOf(accounts.firstOrNull()?.id) }
     val counterpartySuggestions = remember(counterparty, knownCounterparties) {
         if (counterparty.isBlank()) emptyList()
         else knownCounterparties.filter { it.contains(counterparty, ignoreCase = true) && it != counterparty }
@@ -1068,6 +1104,16 @@ private fun DebtFormDialog(
             OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("日期：${formatDateOnly(occurredAtMillis)}")
             }
+            Text(if (direction == DebtDirection.LEND) "從哪個帳戶付出去" else "錢收進哪個帳戶", fontWeight = FontWeight.SemiBold)
+            if (accounts.isEmpty()) {
+                Text("請先到設定新增一個帳戶。", style = MaterialTheme.typography.bodySmall)
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    accounts.forEach { account ->
+                        FilterChip(selected = accountId == account.id, onClick = { accountId = account.id }, label = { Text(account.name) })
+                    }
+                }
+            }
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
@@ -1079,9 +1125,10 @@ private fun DebtFormDialog(
                 Button(
                     onClick = {
                         val amount = amountText.toLongOrNull() ?: return@Button
-                        onSave(direction, counterparty.trim(), amount, occurredAtMillis, null, note.trim())
+                        val selectedAccountId = accountId ?: return@Button
+                        onSave(direction, counterparty.trim(), amount, occurredAtMillis, null, note.trim(), selectedAccountId)
                     },
-                    enabled = counterparty.isNotBlank() && (amountText.toLongOrNull() ?: 0) > 0,
+                    enabled = counterparty.isNotBlank() && (amountText.toLongOrNull() ?: 0) > 0 && accountId != null,
                     modifier = Modifier.weight(1f),
                 ) { Text("儲存") }
             }

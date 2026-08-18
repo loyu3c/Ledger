@@ -2,6 +2,7 @@ package com.loyu.ledger.data.repository
 
 import com.loyu.ledger.data.backup.BackupSerializer
 import com.loyu.ledger.data.local.AccountEntity
+import com.loyu.ledger.data.local.AccountNet
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
 import com.loyu.ledger.data.local.DebtDirection
@@ -11,6 +12,7 @@ import com.loyu.ledger.data.local.TransactionEntity
 import com.loyu.ledger.data.local.TransactionType
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.flow.combine
 
 class LedgerRepository(private val dao: LedgerDao) {
     val accounts = dao.observeAccounts()
@@ -18,7 +20,11 @@ class LedgerRepository(private val dao: LedgerDao) {
     val categories = dao.observeCategories()
     val allCategories = dao.observeAllCategories()
     val transactions = dao.observeTransactions()
-    val accountNet = dao.observeAccountNet()
+    val accountNet = combine(dao.observeAccountNet(), dao.observeDebtAccountNet()) { txnNet, debtNet ->
+        (txnNet + debtNet)
+            .groupBy { it.accountId }
+            .map { (accountId, nets) -> AccountNet(accountId, nets.sumOf { it.net }) }
+    }
     val debts = dao.observeDebts()
 
     fun monthRangeMillis(now: LocalDate = LocalDate.now()): Pair<Long, Long> {
@@ -118,7 +124,7 @@ class LedgerRepository(private val dao: LedgerDao) {
         dao.updateCategory(existing.copy(isActive = isActive))
     }
 
-    suspend fun addDebt(direction: DebtDirection, counterparty: String, amount: Long, occurredAt: Long, dueDate: Long?, note: String) {
+    suspend fun addDebt(direction: DebtDirection, counterparty: String, amount: Long, occurredAt: Long, dueDate: Long?, note: String, accountId: Long) {
         require(counterparty.isNotBlank())
         require(amount > 0)
         dao.insertDebt(
@@ -129,12 +135,13 @@ class LedgerRepository(private val dao: LedgerDao) {
                 occurredAt = occurredAt,
                 dueDate = dueDate,
                 note = note.trim(),
+                accountId = accountId,
             )
         )
     }
 
-    suspend fun settleDebt(id: Long) {
-        dao.markDebtSettled(id, System.currentTimeMillis())
+    suspend fun settleDebt(id: Long, accountId: Long) {
+        dao.markDebtSettled(id, System.currentTimeMillis(), accountId)
     }
 
     suspend fun deleteDebt(id: Long) {
