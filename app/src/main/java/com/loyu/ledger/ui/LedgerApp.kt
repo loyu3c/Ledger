@@ -821,10 +821,10 @@ private fun AssetsLiabilitiesSheet(
     val accountAssetsTotal = assetAccounts.sumOf { accountValue(it, netByAccountId) }
     val accountLiabilitiesTotal = liabilityAccounts.sumOf { accountValue(it, netByAccountId) }
 
-    val debtAssets = debts.filter { it.direction == DebtDirection.LEND }
-    val debtLiabilities = debts.filter { it.direction == DebtDirection.BORROW }
-    val debtAssetsTotal = debtAssets.filter { !it.isSettled }.sumOf { it.amount }
-    val debtLiabilitiesTotal = debtLiabilities.filter { !it.isSettled }.sumOf { it.amount }
+    val debtAssets = debts.filter { it.direction == DebtDirection.LEND && !it.isSettled }
+    val debtLiabilities = debts.filter { it.direction == DebtDirection.BORROW && !it.isSettled }
+    val debtAssetsTotal = debtAssets.sumOf { it.amount }
+    val debtLiabilitiesTotal = debtLiabilities.sumOf { it.amount }
 
     val totalAssets = accountAssetsTotal + debtAssetsTotal
     val totalLiabilities = accountLiabilitiesTotal + debtLiabilitiesTotal
@@ -841,14 +841,14 @@ private fun AssetsLiabilitiesSheet(
             Text("資產與負債", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ColoredSummaryLine("資產（帳戶 + 未還的借出/代墊）", money(totalAssets), IncomeGreen)
-                    ColoredSummaryLine("負債（信用卡 + 未還的借入）", money(totalLiabilities), ExpenseRed)
+                    ColoredSummaryLine("資產", money(totalAssets), IncomeGreen)
+                    ColoredSummaryLine("負債", money(totalLiabilities), ExpenseRed)
                     HorizontalDivider()
                     ColoredSummaryLine("淨值", money(totalAssets - totalLiabilities), netColor, bold = true)
                 }
             }
             Text(
-                "現金/銀行/電子錢包帳戶算資產，信用卡算負債；借貸紀錄也會影響資產與負債，但不計入收入/支出統計。已還清的借貸紀錄仍保留在下方，以灰色文字呈現。",
+                "資產＝帳戶（現金/銀行/電子錢包）＋未還的借出/代墊；負債＝信用卡欠款＋未還的借入。借貸紀錄不計入收入/支出統計，已還清的借貸紀錄不會顯示在下方。",
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -926,7 +926,7 @@ private fun DebtManagementSheet(
     var filterDirection by remember { mutableStateOf(DebtDirection.LEND) }
     var showAddForm by remember { mutableStateOf(false) }
     var debtPendingDelete by remember { mutableStateOf<DebtEntity?>(null) }
-    val filtered = debts.filter { it.direction == filterDirection }
+    val filtered = debts.filter { it.direction == filterDirection && !it.isSettled }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
@@ -1120,6 +1120,8 @@ private fun AccountManagementSheet(
 ) {
     var editingAccount by remember { mutableStateOf<AccountEntity?>(null) }
     var showAddForm by remember { mutableStateOf(false) }
+    var filterLiability by remember { mutableStateOf(false) }
+    val filtered = accounts.filter { (it.type == AccountType.CREDIT_CARD) == filterLiability }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
@@ -1127,7 +1129,11 @@ private fun AccountManagementSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("帳戶管理", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            accounts.forEach { account ->
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(selected = !filterLiability, onClick = { filterLiability = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("資產") }
+                SegmentedButton(selected = filterLiability, onClick = { filterLiability = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("負債") }
+            }
+            filtered.forEach { account ->
                 ListItem(
                     headlineContent = { Text(account.name) },
                     supportingContent = {
@@ -1148,6 +1154,7 @@ private fun AccountManagementSheet(
     if (showAddForm) {
         AccountFormDialog(
             existing = null,
+            defaultType = if (filterLiability) AccountType.CREDIT_CARD else AccountType.CASH,
             onDismiss = { showAddForm = false },
             onSave = { name, type, openingBalance -> onAdd(name, type, openingBalance); showAddForm = false },
         )
@@ -1155,6 +1162,7 @@ private fun AccountManagementSheet(
     editingAccount?.let { account ->
         AccountFormDialog(
             existing = account,
+            defaultType = account.type,
             onDismiss = { editingAccount = null },
             onSave = { name, type, openingBalance -> onEdit(account.id, name, type, openingBalance); editingAccount = null },
         )
@@ -1164,11 +1172,12 @@ private fun AccountManagementSheet(
 @Composable
 private fun AccountFormDialog(
     existing: AccountEntity?,
+    defaultType: AccountType,
     onDismiss: () -> Unit,
     onSave: (String, AccountType, Long) -> Unit,
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
-    var type by remember { mutableStateOf(existing?.type ?: AccountType.CASH) }
+    var type by remember { mutableStateOf(existing?.type ?: defaultType) }
     var openingBalanceText by remember { mutableStateOf(existing?.openingBalance?.toString() ?: "0") }
 
     AlertDialog(
