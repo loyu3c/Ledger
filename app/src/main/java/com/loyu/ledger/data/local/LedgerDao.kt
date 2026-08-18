@@ -51,8 +51,8 @@ interface LedgerDao {
     @Query("SELECT * FROM debts ORDER BY isSettled ASC, occurredAt DESC")
     fun observeDebts(): Flow<List<DebtEntity>>
 
-    @Query("UPDATE debts SET isSettled = 1, settledAt = :settledAt WHERE id = :id")
-    suspend fun markDebtSettled(id: Long, settledAt: Long)
+    @Query("UPDATE debts SET isSettled = 1, settledAt = :settledAt, settledAccountId = :settledAccountId WHERE id = :id")
+    suspend fun markDebtSettled(id: Long, settledAt: Long, settledAccountId: Long)
 
     @Query("DELETE FROM debts WHERE id = :id")
     suspend fun deleteDebt(id: Long)
@@ -135,4 +135,22 @@ interface LedgerDao {
         """
     )
     fun observeAccountNet(): Flow<List<AccountNet>>
+
+    @Query(
+        """
+        SELECT accountId, SUM(delta) AS net FROM (
+            SELECT accountId AS accountId,
+                   CASE WHEN direction = 'LEND' THEN -amount ELSE amount END AS delta
+            FROM debts
+            WHERE accountId IS NOT NULL
+            UNION ALL
+            SELECT settledAccountId AS accountId,
+                   CASE WHEN direction = 'LEND' THEN amount ELSE -amount END AS delta
+            FROM debts
+            WHERE isSettled = 1 AND settledAccountId IS NOT NULL
+        )
+        GROUP BY accountId
+        """
+    )
+    fun observeDebtAccountNet(): Flow<List<AccountNet>>
 }

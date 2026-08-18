@@ -128,12 +128,12 @@ class LedgerViewModel(
         return GroqClient(_groqApiKey.value).parseTransaction(spokenText, categoryNames)
     }
 
-    fun addDebt(direction: DebtDirection, counterparty: String, amount: Long, occurredAt: Long, dueDate: Long?, note: String) {
-        viewModelScope.launch { repository.addDebt(direction, counterparty, amount, occurredAt, dueDate, note) }
+    fun addDebt(direction: DebtDirection, counterparty: String, amount: Long, occurredAt: Long, dueDate: Long?, note: String, accountId: Long) {
+        viewModelScope.launch { repository.addDebt(direction, counterparty, amount, occurredAt, dueDate, note, accountId) }
     }
 
-    fun settleDebt(id: Long) {
-        viewModelScope.launch { repository.settleDebt(id) }
+    fun settleDebt(id: Long, accountId: Long) {
+        viewModelScope.launch { repository.settleDebt(id, accountId) }
     }
 
     fun deleteDebt(id: Long) {

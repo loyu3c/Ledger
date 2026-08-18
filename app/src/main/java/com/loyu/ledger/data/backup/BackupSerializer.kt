@@ -19,7 +19,7 @@ data class BackupData(
 
 /** Serializes the whole local database to/from a single JSON file for manual backup/restore. */
 object BackupSerializer {
-    private const val VERSION = 2
+    private const val VERSION = 3
 
     fun toJson(
         accounts: List<AccountEntity>,
@@ -99,6 +99,8 @@ object BackupSerializer {
                             put("note", it.note)
                             put("isSettled", it.isSettled)
                             put("settledAt", it.settledAt ?: JSONObject.NULL)
+                            put("accountId", it.accountId ?: JSONObject.NULL)
+                            put("settledAccountId", it.settledAccountId ?: JSONObject.NULL)
                         }
                     )
                 }
@@ -169,6 +171,8 @@ object BackupSerializer {
                     note = o.optString("note", ""),
                     isSettled = o.optBoolean("isSettled", false),
                     settledAt = if (o.isNull("settledAt")) null else o.getLong("settledAt"),
+                    accountId = if (o.isNull("accountId")) null else o.optLong("accountId"),
+                    settledAccountId = if (o.isNull("settledAccountId")) null else o.optLong("settledAccountId"),
                 )
             }
         }
