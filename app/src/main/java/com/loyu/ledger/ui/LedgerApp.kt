@@ -83,6 +83,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     var showStatistics by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showDebts by remember { mutableStateOf(false) }
+    var showAssetsLiabilities by remember { mutableStateOf(false) }
     var showAddDebt by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf(ViewMode.LIST) }
@@ -99,6 +100,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                 actions = {
                     TextButton(onClick = { showStatistics = true }) { Text("統計") }
                     TextButton(onClick = { showDebts = true }) { Text("借貸") }
+                    TextButton(onClick = { showAssetsLiabilities = true }) { Text("資產負債") }
                     TextButton(onClick = { showSettings = true }) { Text("設定") }
                 },
             )
@@ -276,6 +278,14 @@ fun LedgerApp(vm: LedgerViewModel) {
         )
     }
 
+    if (showAssetsLiabilities) {
+        AssetsLiabilitiesSheet(
+            debts = debts,
+            onDismiss = { showAssetsLiabilities = false },
+            onOpenDebts = { showAssetsLiabilities = false; showDebts = true },
+        )
+    }
+
     if (showAddDebt) {
         DebtFormDialog(
             defaultDirection = DebtDirection.LEND,
@@ -368,9 +378,10 @@ private fun TimelineListItem(
 @Composable
 private fun DebtListItem(debt: DebtEntity, onClick: () -> Unit) {
     val directionLabel = if (debt.direction == DebtDirection.LEND) "借出/代墊" else "借入"
+    val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
-        headlineContent = { Text(debt.counterparty) },
+        headlineContent = { Text(debt.counterparty, color = if (debt.isSettled) mutedColor else Color.Unspecified) },
         supportingContent = {
             Text(
                 buildString {
@@ -380,7 +391,7 @@ private fun DebtListItem(debt: DebtEntity, onClick: () -> Unit) {
             )
         },
         trailingContent = {
-            Text(money(debt.amount), fontWeight = FontWeight.SemiBold, color = DebtBlue)
+            Text(money(debt.amount), fontWeight = FontWeight.SemiBold, color = if (debt.isSettled) mutedColor else DebtBlue)
         },
     )
 }
@@ -783,6 +794,74 @@ private fun SettingsSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun AssetsLiabilitiesSheet(
+    debts: List<DebtEntity>,
+    onDismiss: () -> Unit,
+    onOpenDebts: () -> Unit,
+) {
+    val assets = debts.filter { it.direction == DebtDirection.LEND }
+    val liabilities = debts.filter { it.direction == DebtDirection.BORROW }
+    val totalAssets = assets.filter { !it.isSettled }.sumOf { it.amount }
+    val totalLiabilities = liabilities.filter { !it.isSettled }.sumOf { it.amount }
+    val netColor = if (totalAssets >= totalLiabilities) IncomeGreen else ExpenseRed
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("資產與負債", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ColoredSummaryLine("資產（未還的借出/代墊）", money(totalAssets), IncomeGreen)
+                    ColoredSummaryLine("負債（未還的借入）", money(totalLiabilities), ExpenseRed)
+                    HorizontalDivider()
+                    ColoredSummaryLine("淨值影響", money(totalAssets - totalLiabilities), netColor, bold = true)
+                }
+            }
+            Text(
+                "借貸紀錄會影響資產與負債，但不計入收入/支出統計；已還清的紀錄仍保留在下方，以灰色文字呈現。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            Text("資產明細（借出/代墊）", fontWeight = FontWeight.SemiBold)
+            if (assets.isEmpty()) {
+                Text("目前沒有資產紀錄。", style = MaterialTheme.typography.bodySmall)
+            } else {
+                assets.forEach { debt ->
+                    DebtListItem(debt = debt, onClick = onOpenDebts)
+                    HorizontalDivider()
+                }
+            }
+
+            Text("負債明細（借入）", fontWeight = FontWeight.SemiBold)
+            if (liabilities.isEmpty()) {
+                Text("目前沒有負債紀錄。", style = MaterialTheme.typography.bodySmall)
+            } else {
+                liabilities.forEach { debt ->
+                    DebtListItem(debt = debt, onClick = onOpenDebts)
+                    HorizontalDivider()
+                }
+            }
+
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("關閉") }
+        }
+    }
+}
+
+@Composable
+private fun ColoredSummaryLine(label: String, value: String, color: Color, bold: Boolean = false) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label)
+        Text(value, fontWeight = if (bold) FontWeight.Bold else FontWeight.SemiBold, color = color)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun DebtManagementSheet(
     debts: List<DebtEntity>,
     onDismiss: () -> Unit,
@@ -811,9 +890,10 @@ private fun DebtManagementSheet(
             if (filtered.isEmpty()) {
                 Text(if (filterDirection == DebtDirection.LEND) "目前沒有借出/代墊的紀錄。" else "目前沒有借入的紀錄。")
             } else {
+                val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
                 filtered.forEach { debt ->
                     ListItem(
-                        headlineContent = { Text(debt.counterparty) },
+                        headlineContent = { Text(debt.counterparty, color = if (debt.isSettled) mutedColor else Color.Unspecified) },
                         supportingContent = {
                             Text(
                                 buildString {
@@ -828,7 +908,7 @@ private fun DebtManagementSheet(
                                 Text(
                                     money(debt.amount),
                                     fontWeight = FontWeight.SemiBold,
-                                    color = if (debt.isSettled) Color.Unspecified else ExpenseRed,
+                                    color = if (debt.isSettled) mutedColor else ExpenseRed,
                                 )
                                 if (!debt.isSettled) {
                                     TextButton(onClick = { onSettle(debt.id) }) { Text("標記已還") }
