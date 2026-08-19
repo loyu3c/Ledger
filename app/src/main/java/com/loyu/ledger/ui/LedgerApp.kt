@@ -846,9 +846,10 @@ private fun InvoiceImportSheet(
     var existingKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var checked by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var categoryByIndex by remember { mutableStateOf<Map<Int, Long>>(emptyMap()) }
-    var accountId by remember(accounts) { mutableStateOf(accounts.firstOrNull()?.id) }
+    var accountByIndex by remember { mutableStateOf<Map<Int, Long>>(emptyMap()) }
     var loading by remember { mutableStateOf(false) }
     var categoryPickerIndex by remember { mutableStateOf<Int?>(null) }
+    var accountPickerIndex by remember { mutableStateOf<Int?>(null) }
 
     val pickCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -866,6 +867,8 @@ private fun InvoiceImportSheet(
                 checked = parsed.indices.filter { i -> parsed[i].total > 0 && "${parsed[i].date}|${parsed[i].merchant}|${parsed[i].total}" !in keys }.toSet()
                 val defaultCategoryId = expenseCategories.firstOrNull()?.id
                 categoryByIndex = if (defaultCategoryId != null) parsed.indices.associateWith { defaultCategoryId } else emptyMap()
+                val defaultAccountId = accounts.firstOrNull()?.id
+                accountByIndex = if (defaultAccountId != null) parsed.indices.associateWith { defaultAccountId } else emptyMap()
                 loading = false
             }.onFailure {
                 loading = false
@@ -895,15 +898,8 @@ private fun InvoiceImportSheet(
             if (loading) {
                 Text("解析中…")
             } else if (receipts.isNotEmpty()) {
-                Text("帳戶", fontWeight = FontWeight.SemiBold)
                 if (accounts.isEmpty()) {
                     Text("請先到設定新增一個帳戶。", style = MaterialTheme.typography.bodySmall)
-                } else {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        accounts.forEach { account ->
-                            FilterChip(selected = accountId == account.id, onClick = { accountId = account.id }, label = { Text(account.name) })
-                        }
-                    }
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -919,6 +915,7 @@ private fun InvoiceImportSheet(
                     val isDuplicate = key in existingKeys
                     val isInvalid = receipt.total <= 0
                     val category = categories.firstOrNull { it.id == categoryByIndex[index] }
+                    val account = accounts.firstOrNull { it.id == accountByIndex[index] }
                     ListItem(
                         leadingContent = {
                             Checkbox(
@@ -933,8 +930,14 @@ private fun InvoiceImportSheet(
                                 Text("${receipt.date} · ${receipt.items.joinToString("、") { it.name }}", maxLines = 2, style = MaterialTheme.typography.bodySmall)
                                 if (isDuplicate) Text("可能與現有紀錄重複，預設不勾選", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
                                 if (isInvalid) Text("小計為 0 或負數，無法匯入", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
-                                TextButton(onClick = { categoryPickerIndex = index }, contentPadding = PaddingValues(0.dp)) {
-                                    Text("分類：${category?.let { "${it.icon} ${it.name}" } ?: "未選擇"}")
+                                Row {
+                                    TextButton(onClick = { categoryPickerIndex = index }, contentPadding = PaddingValues(0.dp)) {
+                                        Text("分類：${category?.let { "${it.icon} ${it.name}" } ?: "未選擇"}")
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    TextButton(onClick = { accountPickerIndex = index }, contentPadding = PaddingValues(0.dp)) {
+                                        Text("帳戶：${account?.name ?: "未選擇"}")
+                                    }
                                 }
                             }
                         },
@@ -948,7 +951,7 @@ private fun InvoiceImportSheet(
                         val entries = checked.mapNotNull { index ->
                             val receipt = receipts.getOrNull(index) ?: return@mapNotNull null
                             val catId = categoryByIndex[index] ?: return@mapNotNull null
-                            val accId = accountId ?: return@mapNotNull null
+                            val accId = accountByIndex[index] ?: return@mapNotNull null
                             TransactionEntity(
                                 type = TransactionType.EXPENSE,
                                 amount = receipt.total,
@@ -965,7 +968,7 @@ private fun InvoiceImportSheet(
                             onDismiss()
                         }
                     },
-                    enabled = checked.isNotEmpty() && accountId != null,
+                    enabled = checked.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("匯入 ${checked.size} 筆") }
             }
@@ -990,6 +993,29 @@ private fun InvoiceImportSheet(
                 }
             },
             confirmButton = { TextButton(onClick = { categoryPickerIndex = null }) { Text("關閉") } },
+        )
+    }
+
+    accountPickerIndex?.let { index ->
+        AlertDialog(
+            onDismissRequest = { accountPickerIndex = null },
+            title = { Text("選擇帳戶") },
+            text = {
+                if (accounts.isEmpty()) {
+                    Text("請先到設定新增一個帳戶。", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        accounts.forEach { account ->
+                            FilterChip(
+                                selected = accountByIndex[index] == account.id,
+                                onClick = { accountByIndex = accountByIndex + (index to account.id); accountPickerIndex = null },
+                                label = { Text("${account.name}（${accountTypeLabel(account.type)}）") },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { accountPickerIndex = null }) { Text("關閉") } },
         )
     }
 }
