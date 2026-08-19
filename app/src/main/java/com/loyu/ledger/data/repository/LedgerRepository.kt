@@ -10,6 +10,7 @@ import com.loyu.ledger.data.local.DebtEntity
 import com.loyu.ledger.data.local.LedgerDao
 import com.loyu.ledger.data.local.TransactionEntity
 import com.loyu.ledger.data.local.TransactionType
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.combine
@@ -146,6 +147,19 @@ class LedgerRepository(private val dao: LedgerDao) {
 
     suspend fun deleteDebt(id: Long) {
         dao.deleteDebt(id)
+    }
+
+    /** "date|merchant|amount" keys for existing transactions, used to flag likely-duplicate CSV imports. */
+    suspend fun existingTransactionKeys(): Set<String> {
+        val zone = ZoneId.systemDefault()
+        return dao.getAllTransactionsOnce().map { txn ->
+            val date = Instant.ofEpochMilli(txn.occurredAt).atZone(zone).toLocalDate()
+            "$date|${txn.merchant}|${txn.amount}"
+        }.toSet()
+    }
+
+    suspend fun importTransactions(entries: List<TransactionEntity>) {
+        dao.insertTransactions(entries)
     }
 
     suspend fun exportBackup(): String {
