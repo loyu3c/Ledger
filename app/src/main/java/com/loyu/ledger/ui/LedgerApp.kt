@@ -43,8 +43,11 @@ import com.loyu.ledger.data.local.CategoryEntity
 import com.loyu.ledger.data.local.CategoryTotal
 import com.loyu.ledger.data.local.DebtDirection
 import com.loyu.ledger.data.local.DebtEntity
+import com.loyu.ledger.data.local.TransactionEntity
 import com.loyu.ledger.data.local.TransactionRow
 import com.loyu.ledger.data.local.TransactionType
+import com.loyu.ledger.data.invoice.InvoiceCsvParser
+import com.loyu.ledger.data.invoice.InvoiceCsvReceipt
 import com.loyu.ledger.data.prefs.ThemeMode
 import com.loyu.ledger.data.remote.VoiceTransactionResult
 import kotlinx.coroutines.launch
@@ -84,6 +87,7 @@ fun LedgerApp(vm: LedgerViewModel) {
     var showCategories by remember { mutableStateOf(false) }
     var showStatistics by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showImportInvoices by remember { mutableStateOf(false) }
     var showDebts by remember { mutableStateOf(false) }
     var showAssetsLiabilities by remember { mutableStateOf(false) }
     var showAddDebt by remember { mutableStateOf(false) }
@@ -315,6 +319,17 @@ fun LedgerApp(vm: LedgerViewModel) {
             onImportBackup = { vm.importBackup(it) },
             onOpenAccounts = { showSettings = false; showAccounts = true },
             onOpenCategories = { showSettings = false; showCategories = true },
+            onOpenImportInvoices = { showSettings = false; showImportInvoices = true },
+        )
+    }
+
+    if (showImportInvoices) {
+        InvoiceImportSheet(
+            accounts = accounts,
+            categories = categories,
+            onDismiss = { showImportInvoices = false },
+            onLoadExistingKeys = { vm.existingTransactionKeys() },
+            onImport = { entries -> vm.importInvoiceTransactions(entries) },
         )
     }
 }
@@ -666,6 +681,7 @@ private fun SettingsSheet(
     onImportBackup: suspend (String) -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenCategories: () -> Unit,
+    onOpenImportInvoices: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -735,6 +751,11 @@ private fun SettingsSheet(
                     OutlinedButton(onClick = onOpenAccounts, modifier = Modifier.weight(1f)) { Text("帳戶管理") }
                     OutlinedButton(onClick = onOpenCategories, modifier = Modifier.weight(1f)) { Text("分類管理") }
                 }
+                Text(
+                    "從其他 App 匯出電子發票消費明細 CSV，勾選要記帳的項目後一次匯入，取代雲端電子發票 API 串接。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(onClick = onOpenImportInvoices, modifier = Modifier.fillMaxWidth()) { Text("匯入電子發票明細（CSV）") }
             }
 
             HorizontalDivider()
@@ -794,6 +815,171 @@ private fun SettingsSheet(
                 }) { Text("確定匯入") }
             },
             dismissButton = { TextButton(onClick = { pendingImportUri = null }) { Text("取消") } },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InvoiceImportSheet(
+    accounts: List<AccountEntity>,
+    categories: List<CategoryEntity>,
+    onDismiss: () -> Unit,
+    onLoadExistingKeys: suspend () -> Set<String>,
+    onImport: suspend (List<TransactionEntity>) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val expenseCategories = categories.filter { it.type == TransactionType.EXPENSE }
+
+    var receipts by remember { mutableStateOf<List<InvoiceCsvReceipt>>(emptyList()) }
+    var existingKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var checked by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var categoryByIndex by remember { mutableStateOf<Map<Int, Long>>(emptyMap()) }
+    var accountId by remember(accounts) { mutableStateOf(accounts.firstOrNull()?.id) }
+    var loading by remember { mutableStateOf(false) }
+    var categoryPickerIndex by remember { mutableStateOf<Int?>(null) }
+
+    val pickCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        loading = true
+        scope.launch {
+            runCatching {
+                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ?: throw IllegalStateException("empty file")
+                val parsed = InvoiceCsvParser.parse(text)
+                val keys = onLoadExistingKeys()
+                parsed to keys
+            }.onSuccess { (parsed, keys) ->
+                receipts = parsed
+                existingKeys = keys
+                checked = parsed.indices.filter { i -> parsed[i].total > 0 && "${parsed[i].date}|${parsed[i].merchant}|${parsed[i].total}" !in keys }.toSet()
+                val defaultCategoryId = expenseCategories.firstOrNull()?.id
+                categoryByIndex = if (defaultCategoryId != null) parsed.indices.associateWith { defaultCategoryId } else emptyMap()
+                loading = false
+            }.onFailure {
+                loading = false
+                Toast.makeText(context, "發票明細 CSV 格式無法解析", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("匯入電子發票明細", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "選擇從其他 App 匯出的電子發票消費明細 CSV，同一天、同一店家的品項會自動合併成一筆消費紀錄（折扣/退款會直接併入小計）。勾選要匯入的紀錄、選好分類與帳戶後一次建立。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedButton(
+                onClick = { pickCsvLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*")) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("選擇 CSV 檔案") }
+
+            if (loading) {
+                Text("解析中…")
+            } else if (receipts.isNotEmpty()) {
+                Text("帳戶", fontWeight = FontWeight.SemiBold)
+                if (accounts.isEmpty()) {
+                    Text("請先到設定新增一個帳戶。", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        accounts.forEach { account ->
+                            FilterChip(selected = accountId == account.id, onClick = { accountId = account.id }, label = { Text(account.name) })
+                        }
+                    }
+                }
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("共 ${receipts.size} 筆，已勾選 ${checked.size} 筆", style = MaterialTheme.typography.bodySmall)
+                    Row {
+                        TextButton(onClick = { checked = receipts.indices.filter { receipts[it].total > 0 }.toSet() }) { Text("全選") }
+                        TextButton(onClick = { checked = emptySet() }) { Text("全不選") }
+                    }
+                }
+
+                receipts.forEachIndexed { index, receipt ->
+                    val key = "${receipt.date}|${receipt.merchant}|${receipt.total}"
+                    val isDuplicate = key in existingKeys
+                    val isInvalid = receipt.total <= 0
+                    val category = categories.firstOrNull { it.id == categoryByIndex[index] }
+                    ListItem(
+                        leadingContent = {
+                            Checkbox(
+                                checked = index in checked,
+                                onCheckedChange = { isChecked -> checked = if (isChecked) checked + index else checked - index },
+                                enabled = !isInvalid,
+                            )
+                        },
+                        headlineContent = { Text(receipt.merchant, maxLines = 1) },
+                        supportingContent = {
+                            Column {
+                                Text("${receipt.date} · ${receipt.items.joinToString("、") { it.name }}", maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                if (isDuplicate) Text("可能與現有紀錄重複，預設不勾選", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
+                                if (isInvalid) Text("小計為 0 或負數，無法匯入", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
+                                TextButton(onClick = { categoryPickerIndex = index }, contentPadding = PaddingValues(0.dp)) {
+                                    Text("分類：${category?.let { "${it.icon} ${it.name}" } ?: "未選擇"}")
+                                }
+                            }
+                        },
+                        trailingContent = { Text(money(receipt.total), fontWeight = FontWeight.SemiBold) },
+                    )
+                    HorizontalDivider()
+                }
+
+                Button(
+                    onClick = {
+                        val entries = checked.mapNotNull { index ->
+                            val receipt = receipts.getOrNull(index) ?: return@mapNotNull null
+                            val catId = categoryByIndex[index] ?: return@mapNotNull null
+                            val accId = accountId ?: return@mapNotNull null
+                            TransactionEntity(
+                                type = TransactionType.EXPENSE,
+                                amount = receipt.total,
+                                accountId = accId,
+                                categoryId = catId,
+                                merchant = receipt.merchant,
+                                note = receipt.items.joinToString("、") { it.name },
+                                occurredAt = receipt.date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                            )
+                        }
+                        scope.launch {
+                            onImport(entries)
+                            Toast.makeText(context, "已匯入 ${entries.size} 筆記帳紀錄", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }
+                    },
+                    enabled = checked.isNotEmpty() && accountId != null,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("匯入 ${checked.size} 筆") }
+            }
+
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("關閉") }
+        }
+    }
+
+    categoryPickerIndex?.let { index ->
+        AlertDialog(
+            onDismissRequest = { categoryPickerIndex = null },
+            title = { Text("選擇分類") },
+            text = {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    expenseCategories.forEach { cat ->
+                        FilterChip(
+                            selected = categoryByIndex[index] == cat.id,
+                            onClick = { categoryByIndex = categoryByIndex + (index to cat.id); categoryPickerIndex = null },
+                            label = { Text("${cat.icon} ${cat.name}") },
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { categoryPickerIndex = null }) { Text("關閉") } },
         )
     }
 }

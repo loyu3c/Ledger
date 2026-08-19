@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.DebtDirection
+import com.loyu.ledger.data.local.TransactionEntity
 import com.loyu.ledger.data.local.TransactionType
 import com.loyu.ledger.data.prefs.SettingsRepository
 import com.loyu.ledger.data.prefs.ThemeMode
@@ -143,6 +144,11 @@ class LedgerViewModel(
     suspend fun exportBackup(): String = repository.exportBackup()
 
     suspend fun importBackup(json: String) = repository.importBackup(json)
+
+    suspend fun existingTransactionKeys(): Set<String> = repository.existingTransactionKeys()
+
+    suspend fun importInvoiceTransactions(entries: List<TransactionEntity>) =
+        repository.importTransactions(entries)
 
     class Factory(
         private val repository: LedgerRepository,
