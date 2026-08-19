@@ -575,15 +575,7 @@ private fun TransactionSheet(
                 SegmentedButton(selected = type == TransactionType.EXPENSE, onClick = { type = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
                 SegmentedButton(selected = type == TransactionType.INCOME, onClick = { type = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
             }
-            OutlinedTextField(
-                value = amountText,
-                onValueChange = { amountText = it.filter(Char::isDigit) },
-                label = { Text("金額") },
-                prefix = { Text("NT$ ") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
+            CalculatorAmountField(expression = amountText, onExpressionChange = { amountText = it }, modifier = Modifier.fillMaxWidth())
             Text("分類", fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 filteredCategories.forEach { category ->
@@ -608,10 +600,10 @@ private fun TransactionSheet(
                 }
                 Button(
                     onClick = {
-                        val amount = amountText.toLongOrNull() ?: return@Button
+                        val amount = evaluateCalculatorExpression(amountText) ?: return@Button
                         onSave(type, amount, accountId ?: return@Button, categoryId ?: return@Button, merchant, note, occurredAtMillis)
                     },
-                    enabled = (amountText.toLongOrNull() ?: 0) > 0 && accountId != null && categoryId != null,
+                    enabled = (evaluateCalculatorExpression(amountText) ?: 0) > 0 && accountId != null && categoryId != null,
                     modifier = Modifier.weight(1f),
                 ) { Text("儲存") }
             }
@@ -1278,15 +1270,7 @@ private fun DebtFormDialog(
                     }
                 }
             }
-            OutlinedTextField(
-                value = amountText,
-                onValueChange = { amountText = it.filter(Char::isDigit) },
-                label = { Text("金額") },
-                prefix = { Text("NT$ ") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            CalculatorAmountField(expression = amountText, onExpressionChange = { amountText = it }, modifier = Modifier.fillMaxWidth())
             OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("日期：${formatDateOnly(occurredAtMillis)}")
             }
@@ -1310,11 +1294,11 @@ private fun DebtFormDialog(
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("取消") }
                 Button(
                     onClick = {
-                        val amount = amountText.toLongOrNull() ?: return@Button
+                        val amount = evaluateCalculatorExpression(amountText) ?: return@Button
                         val selectedAccountId = accountId ?: return@Button
                         onSave(direction, counterparty.trim(), amount, occurredAtMillis, null, note.trim(), selectedAccountId)
                     },
-                    enabled = counterparty.isNotBlank() && (amountText.toLongOrNull() ?: 0) > 0 && accountId != null,
+                    enabled = counterparty.isNotBlank() && (evaluateCalculatorExpression(amountText) ?: 0) > 0 && accountId != null,
                     modifier = Modifier.weight(1f),
                 ) { Text("儲存") }
             }
@@ -1710,3 +1694,91 @@ private fun monthLabel(month: LocalDate): String = month.format(monthLabelFormat
 private fun money(value: Long): String = "NT$ ${NumberFormat.getIntegerInstance(Locale.TAIWAN).format(value)}"
 private fun formatDate(epoch: Long): String = SimpleDateFormat("MM/dd HH:mm", Locale.TAIWAN).format(Date(epoch))
 private fun formatDateOnly(epoch: Long): String = SimpleDateFormat("yyyy/MM/dd", Locale.TAIWAN).format(Date(epoch))
+
+private val calculatorOperators = charArrayOf('+', '−', '×', '÷')
+
+/** Appends a keypress to a calculator expression, keeping it always well-formed for [evaluateCalculatorExpression]. */
+private fun applyCalculatorKey(expression: String, key: String): String = when (key) {
+    "C" -> ""
+    "⌫" -> if (expression.isNotEmpty()) expression.dropLast(1) else expression
+    "+", "−", "×", "÷" -> when {
+        expression.isEmpty() -> expression
+        expression.last() in calculatorOperators -> expression.dropLast(1) + key
+        else -> expression + key
+    }
+    else -> if (expression.length >= 12) expression else expression + key
+}
+
+/** Evaluates a +-×÷ expression built from [applyCalculatorKey] presses, honoring ×÷ before +−. Returns null while incomplete or invalid (e.g. divide by zero). */
+private fun evaluateCalculatorExpression(expression: String): Long? {
+    if (expression.isEmpty() || expression.last() in calculatorOperators) return null
+    val tokens = mutableListOf<String>()
+    val current = StringBuilder()
+    for (c in expression) {
+        if (c in calculatorOperators) {
+            tokens.add(current.toString()); current.clear()
+            tokens.add(c.toString())
+        } else current.append(c)
+    }
+    tokens.add(current.toString())
+    if (tokens.any { it.isEmpty() }) return null
+
+    val reduced = mutableListOf(tokens[0].toDoubleOrNull() ?: return null)
+    var i = 1
+    while (i < tokens.size) {
+        val op = tokens[i]
+        val value = tokens.getOrNull(i + 1)?.toDoubleOrNull() ?: return null
+        if (op == "×" || op == "÷") {
+            val prev = reduced.removeAt(reduced.size - 1)
+            if (op == "÷" && value == 0.0) return null
+            reduced.add(if (op == "×") prev * value else prev / value)
+        } else {
+            reduced.add(if (op == "+") value else -value)
+        }
+        i += 2
+    }
+    return Math.round(reduced.sum())
+}
+
+@Composable
+private fun CalculatorAmountField(expression: String, onExpressionChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    val amount = remember(expression) { evaluateCalculatorExpression(expression) }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.End) {
+                Text(
+                    "NT$ ${expression.ifEmpty { "0" }}",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                if (expression.any { it in calculatorOperators } && amount != null) {
+                    Text("= ${money(amount)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        listOf(
+            listOf("7", "8", "9", "÷"),
+            listOf("4", "5", "6", "×"),
+            listOf("1", "2", "3", "−"),
+            listOf("C", "0", "⌫", "+"),
+        ).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { key ->
+                    OutlinedButton(onClick = { onExpressionChange(applyCalculatorKey(expression, key)) }, modifier = Modifier.weight(1f)) {
+                        Text(key, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        }
+        Button(
+            onClick = { evaluateCalculatorExpression(expression)?.let { onExpressionChange(it.toString()) } },
+            enabled = expression.any { it in calculatorOperators },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("=", style = MaterialTheme.typography.titleMedium) }
+    }
+}
