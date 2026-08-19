@@ -366,7 +366,6 @@ private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         headlineContent = { Text(if (row.merchant.isNotBlank()) row.merchant else row.categoryName) },
-        supportingContent = { Text("${row.categoryIcon} ${row.categoryName} · ${row.accountName} · ${formatDate(row.occurredAt)}") },
         trailingContent = {
             val prefix = if (row.type == TransactionType.EXPENSE) "-" else "+"
             val color = if (row.type == TransactionType.INCOME) IncomeGreen else Color.Unspecified
@@ -398,19 +397,10 @@ private fun TimelineListItem(
 
 @Composable
 private fun DebtListItem(debt: DebtEntity, onClick: () -> Unit) {
-    val directionLabel = if (debt.direction == DebtDirection.LEND) "借出/代墊" else "借入"
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         headlineContent = { Text(debt.counterparty, color = if (debt.isSettled) mutedColor else Color.Unspecified) },
-        supportingContent = {
-            Text(
-                buildString {
-                    append("🤝 $directionLabel · ${formatDate(debt.occurredAt)}")
-                    if (debt.isSettled) append(" · 已還")
-                }
-            )
-        },
         trailingContent = {
             Text(money(debt.amount), fontWeight = FontWeight.SemiBold, color = if (debt.isSettled) mutedColor else DebtBlue)
         },
@@ -1754,7 +1744,6 @@ private val monthLabelFormatter = DateTimeFormatter.ofPattern("yyyy年MM月", Lo
 private fun monthLabel(month: LocalDate): String = month.format(monthLabelFormatter)
 
 private fun money(value: Long): String = "NT$ ${NumberFormat.getIntegerInstance(Locale.TAIWAN).format(value)}"
-private fun formatDate(epoch: Long): String = SimpleDateFormat("MM/dd HH:mm", Locale.TAIWAN).format(Date(epoch))
 private fun formatDateOnly(epoch: Long): String = SimpleDateFormat("yyyy/MM/dd", Locale.TAIWAN).format(Date(epoch))
 
 private val calculatorOperators = charArrayOf('+', '−', '×', '÷')
