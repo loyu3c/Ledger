@@ -164,7 +164,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                 val timeline = buildTimeline(transactions, monthDebts)
                 if (timeline.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
                 items(timeline, key = { it.key }) { entry ->
-                    TimelineListItem(entry = entry, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
+                    TimelineListItem(entry = entry, accounts = accounts, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
                     HorizontalDivider()
                 }
             } else {
@@ -205,7 +205,7 @@ fun LedgerApp(vm: LedgerViewModel) {
                         item { Text("這天還沒有紀錄。") }
                     } else {
                         items(dayTimeline, key = { it.key }) { entry ->
-                            TimelineListItem(entry = entry, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
+                            TimelineListItem(entry = entry, accounts = accounts, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
                             HorizontalDivider()
                         }
                     }
@@ -366,6 +366,7 @@ private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         headlineContent = { Text(if (row.merchant.isNotBlank()) row.merchant else row.categoryName) },
+        supportingContent = { Text("${row.categoryIcon} ${row.categoryName} · ${row.accountName}") },
         trailingContent = {
             val prefix = if (row.type == TransactionType.EXPENSE) "-" else "+"
             val color = if (row.type == TransactionType.INCOME) IncomeGreen else Color.Unspecified
@@ -386,21 +387,34 @@ private fun buildTimeline(transactions: List<TransactionRow>, debts: List<DebtEn
 @Composable
 private fun TimelineListItem(
     entry: TimelineEntry,
+    accounts: List<AccountEntity>,
     onClickTransaction: (TransactionRow) -> Unit,
     onClickDebt: (DebtEntity) -> Unit,
 ) {
     when (entry) {
         is TimelineEntry.Txn -> TransactionListItem(row = entry.row, onClick = { onClickTransaction(entry.row) })
-        is TimelineEntry.Debt -> DebtListItem(debt = entry.debt, onClick = { onClickDebt(entry.debt) })
+        is TimelineEntry.Debt -> DebtListItem(
+            debt = entry.debt,
+            accountName = accounts.firstOrNull { it.id == entry.debt.accountId }?.name,
+            onClick = { onClickDebt(entry.debt) },
+        )
     }
 }
 
 @Composable
-private fun DebtListItem(debt: DebtEntity, onClick: () -> Unit) {
+private fun DebtListItem(debt: DebtEntity, accountName: String? = null, onClick: () -> Unit) {
+    val directionLabel = if (debt.direction == DebtDirection.LEND) "借出/代墊" else "借入"
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val contentColor = if (debt.isSettled) mutedColor else Color.Unspecified
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
-        headlineContent = { Text(debt.counterparty, color = if (debt.isSettled) mutedColor else Color.Unspecified) },
+        headlineContent = { Text(debt.counterparty, color = contentColor) },
+        supportingContent = {
+            Text(
+                "🤝 $directionLabel" + (accountName?.let { " · $it" } ?: ""),
+                color = contentColor,
+            )
+        },
         trailingContent = {
             Text(money(debt.amount), fontWeight = FontWeight.SemiBold, color = if (debt.isSettled) mutedColor else DebtBlue)
         },
@@ -1091,7 +1105,7 @@ private fun AssetsLiabilitiesSheet(
                 Text("目前沒有借出/代墊紀錄。", style = MaterialTheme.typography.bodySmall)
             } else {
                 debtAssets.forEach { debt ->
-                    DebtListItem(debt = debt, onClick = onOpenDebts)
+                    DebtListItem(debt = debt, accountName = accounts.firstOrNull { it.id == debt.accountId }?.name, onClick = onOpenDebts)
                     HorizontalDivider()
                 }
             }
@@ -1101,7 +1115,7 @@ private fun AssetsLiabilitiesSheet(
                 Text("目前沒有借入紀錄。", style = MaterialTheme.typography.bodySmall)
             } else {
                 debtLiabilities.forEach { debt ->
-                    DebtListItem(debt = debt, onClick = onOpenDebts)
+                    DebtListItem(debt = debt, accountName = accounts.firstOrNull { it.id == debt.accountId }?.name, onClick = onOpenDebts)
                     HorizontalDivider()
                 }
             }
