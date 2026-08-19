@@ -501,6 +501,7 @@ private fun TransactionSheet(
     val scope = rememberCoroutineScope()
     var type by remember { mutableStateOf(existing?.type ?: TransactionType.EXPENSE) }
     var amountText by remember { mutableStateOf(existing?.amount?.toString() ?: "") }
+    var showCalculator by remember { mutableStateOf(false) }
     var merchant by remember { mutableStateOf(existing?.merchant ?: "") }
     var note by remember { mutableStateOf(existing?.note ?: "") }
     var occurredAtMillis by remember { mutableStateOf(existing?.occurredAt ?: System.currentTimeMillis()) }
@@ -575,7 +576,16 @@ private fun TransactionSheet(
                 SegmentedButton(selected = type == TransactionType.EXPENSE, onClick = { type = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
                 SegmentedButton(selected = type == TransactionType.INCOME, onClick = { type = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
             }
-            CalculatorAmountField(expression = amountText, onExpressionChange = { amountText = it }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = amountText,
+                onValueChange = { amountText = it.filter(Char::isDigit) },
+                label = { Text("金額") },
+                prefix = { Text("NT$ ") },
+                trailingIcon = { IconButton(onClick = { showCalculator = true }) { Text("🧮") } },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
             Text("分類", fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 filteredCategories.forEach { category ->
@@ -600,10 +610,10 @@ private fun TransactionSheet(
                 }
                 Button(
                     onClick = {
-                        val amount = evaluateCalculatorExpression(amountText) ?: return@Button
+                        val amount = amountText.toLongOrNull() ?: return@Button
                         onSave(type, amount, accountId ?: return@Button, categoryId ?: return@Button, merchant, note, occurredAtMillis)
                     },
-                    enabled = (evaluateCalculatorExpression(amountText) ?: 0) > 0 && accountId != null && categoryId != null,
+                    enabled = (amountText.toLongOrNull() ?: 0) > 0 && accountId != null && categoryId != null,
                     modifier = Modifier.weight(1f),
                 ) { Text("儲存") }
             }
@@ -657,6 +667,14 @@ private fun TransactionSheet(
                 val invoiceNote = if (itemsText.isNotBlank()) "統編:${invoice.sellerId} $itemsText" else "統編:${invoice.sellerId}"
                 note = if (note.isBlank()) invoiceNote else "$note $invoiceNote"
             },
+        )
+    }
+
+    if (showCalculator) {
+        CalculatorDialog(
+            initialExpression = amountText,
+            onDismiss = { showCalculator = false },
+            onConfirm = { amountText = it.toString(); showCalculator = false },
         )
     }
 }
@@ -1226,6 +1244,7 @@ private fun DebtFormDialog(
     var counterparty by remember { mutableStateOf("") }
     var showCounterpartySuggestions by remember { mutableStateOf(false) }
     var amountText by remember { mutableStateOf("") }
+    var showCalculator by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
     var occurredAtMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -1270,7 +1289,16 @@ private fun DebtFormDialog(
                     }
                 }
             }
-            CalculatorAmountField(expression = amountText, onExpressionChange = { amountText = it }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = amountText,
+                onValueChange = { amountText = it.filter(Char::isDigit) },
+                label = { Text("金額") },
+                prefix = { Text("NT$ ") },
+                trailingIcon = { IconButton(onClick = { showCalculator = true }) { Text("🧮") } },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
             OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("日期：${formatDateOnly(occurredAtMillis)}")
             }
@@ -1294,11 +1322,11 @@ private fun DebtFormDialog(
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("取消") }
                 Button(
                     onClick = {
-                        val amount = evaluateCalculatorExpression(amountText) ?: return@Button
+                        val amount = amountText.toLongOrNull() ?: return@Button
                         val selectedAccountId = accountId ?: return@Button
                         onSave(direction, counterparty.trim(), amount, occurredAtMillis, null, note.trim(), selectedAccountId)
                     },
-                    enabled = counterparty.isNotBlank() && (evaluateCalculatorExpression(amountText) ?: 0) > 0 && accountId != null,
+                    enabled = counterparty.isNotBlank() && (amountText.toLongOrNull() ?: 0) > 0 && accountId != null,
                     modifier = Modifier.weight(1f),
                 ) { Text("儲存") }
             }
@@ -1323,6 +1351,14 @@ private fun DebtFormDialog(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    if (showCalculator) {
+        CalculatorDialog(
+            initialExpression = amountText,
+            onDismiss = { showCalculator = false },
+            onConfirm = { amountText = it.toString(); showCalculator = false },
+        )
     }
 }
 
@@ -1741,7 +1777,7 @@ private fun evaluateCalculatorExpression(expression: String): Long? {
 }
 
 @Composable
-private fun CalculatorAmountField(expression: String, onExpressionChange: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun CalculatorKeypad(expression: String, onExpressionChange: (String) -> Unit, modifier: Modifier = Modifier) {
     val amount = remember(expression) { evaluateCalculatorExpression(expression) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(
@@ -1775,10 +1811,21 @@ private fun CalculatorAmountField(expression: String, onExpressionChange: (Strin
                 }
             }
         }
-        Button(
-            onClick = { evaluateCalculatorExpression(expression)?.let { onExpressionChange(it.toString()) } },
-            enabled = expression.any { it in calculatorOperators },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("=", style = MaterialTheme.typography.titleMedium) }
     }
+}
+
+/** A popup calculator: builds an expression on the keypad, then "帶入" evaluates it and hands the result back to the caller's amount field. */
+@Composable
+private fun CalculatorDialog(initialExpression: String, onDismiss: () -> Unit, onConfirm: (Long) -> Unit) {
+    var expression by remember { mutableStateOf(initialExpression) }
+    val result = evaluateCalculatorExpression(expression)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("計算機") },
+        text = { CalculatorKeypad(expression = expression, onExpressionChange = { expression = it }) },
+        confirmButton = {
+            TextButton(onClick = { result?.let(onConfirm) }, enabled = (result ?: 0) > 0) { Text("帶入") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
