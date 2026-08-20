@@ -89,8 +89,13 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
     var showStatistics by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showImportInvoices by remember { mutableStateOf(false) }
-    var pendingSharedInvoiceCsvUri by remember { mutableStateOf(sharedInvoiceCsvUri) }
-    LaunchedEffect(pendingSharedInvoiceCsvUri) { if (pendingSharedInvoiceCsvUri != null) showImportInvoices = true }
+    var pendingSharedInvoiceCsvUri by remember { mutableStateOf<Uri?>(null) }
+    LaunchedEffect(sharedInvoiceCsvUri) {
+        if (sharedInvoiceCsvUri != null) {
+            pendingSharedInvoiceCsvUri = sharedInvoiceCsvUri
+            showImportInvoices = true
+        }
+    }
     var showDebts by remember { mutableStateOf(false) }
     var showAssetsLiabilities by remember { mutableStateOf(false) }
     var showAddDebt by remember { mutableStateOf(false) }
