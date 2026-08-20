@@ -2,6 +2,7 @@ package com.loyu.ledger.data.local
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
@@ -17,6 +18,7 @@ interface LedgerDao {
     @Insert suspend fun insertTransactions(transactions: List<TransactionEntity>)
     @Insert suspend fun insertDebt(debt: DebtEntity): Long
     @Insert suspend fun insertDebts(debts: List<DebtEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertIgnoredInvoices(entries: List<IgnoredInvoiceEntity>)
     @Update suspend fun updateTransaction(transaction: TransactionEntity)
     @Update suspend fun updateAccount(account: AccountEntity)
     @Update suspend fun updateCategory(category: CategoryEntity)
@@ -25,6 +27,7 @@ interface LedgerDao {
     @Query("SELECT * FROM categories") suspend fun getAllCategoriesOnce(): List<CategoryEntity>
     @Query("SELECT * FROM transactions") suspend fun getAllTransactionsOnce(): List<TransactionEntity>
     @Query("SELECT * FROM debts") suspend fun getAllDebtsOnce(): List<DebtEntity>
+    @Query("SELECT invoiceNumber FROM ignored_invoices") suspend fun getAllIgnoredInvoiceNumbersOnce(): List<String>
 
     @Query("DELETE FROM transactions") suspend fun deleteAllTransactions()
     @Query("DELETE FROM accounts") suspend fun deleteAllAccounts()

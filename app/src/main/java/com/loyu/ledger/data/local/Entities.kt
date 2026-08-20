@@ -76,6 +76,12 @@ data class DebtEntity(
     val settledAccountId: Long? = null,
 )
 
+@Entity(tableName = "ignored_invoices")
+data class IgnoredInvoiceEntity(
+    @PrimaryKey val invoiceNumber: String,
+    val ignoredAt: Long = System.currentTimeMillis(),
+)
+
 data class TransactionRow(
     val id: Long,
     val type: TransactionType,

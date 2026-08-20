@@ -9,8 +9,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [AccountEntity::class, CategoryEntity::class, TransactionEntity::class, DebtEntity::class],
-    version = 3,
+    entities = [AccountEntity::class, CategoryEntity::class, TransactionEntity::class, DebtEntity::class, IgnoredInvoiceEntity::class],
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -47,12 +47,25 @@ abstract class LedgerDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `ignored_invoices` (
+                        `invoiceNumber` TEXT NOT NULL PRIMARY KEY,
+                        `ignoredAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getInstance(context: Context): LedgerDatabase = INSTANCE ?: synchronized(this) {
             INSTANCE ?: Room.databaseBuilder(
                 context.applicationContext,
                 LedgerDatabase::class.java,
                 "loyu-ledger.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
         }
     }
 }

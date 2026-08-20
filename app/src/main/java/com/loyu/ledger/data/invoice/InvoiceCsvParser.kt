@@ -1,6 +1,9 @@
 package com.loyu.ledger.data.invoice
 
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 data class InvoiceCsvLineItem(
     val name: String,
@@ -8,7 +11,8 @@ data class InvoiceCsvLineItem(
 )
 
 data class InvoiceCsvReceipt(
-    val date: LocalDate,
+    val invoiceNumber: String,
+    val occurredAt: LocalDateTime,
     val merchant: String,
     val items: List<InvoiceCsvLineItem>,
 ) {
@@ -16,55 +20,58 @@ data class InvoiceCsvReceipt(
 }
 
 /**
- * Parses a "消費明細" CSV export (消費日期,消費品項,單價,個數,小計,店家名稱) from third-party
- * e-invoice carrier apps, since there's no cloud e-invoice API integration in this local-first
- * app. Each row is one line item of a receipt; consecutive rows sharing the same date and
- * merchant are folded into a single receipt (discount/refund rows included), since the export
- * carries no invoice number to group by.
+ * Parses the app's own "分享" CSV export (消費時間,發票號碼,店家名稱,賣方統編,消費品項,單價,個數,小計,總計,備註).
+ * Only this format is supported: it carries a 發票號碼 (invoice number), which groups rows into
+ * receipts exactly. Older "消費明細" downloads without an invoice number have to guess grouping
+ * from date+merchant and can misfire on two same-day visits to the same store, so they're rejected
+ * outright rather than silently imported with a worse heuristic.
  */
 object InvoiceCsvParser {
+    private val dateOnlyFormatter = DateTimeFormatter.ofPattern("yyyy/M/d")
+    private val timeOnlyFormatter = DateTimeFormatter.ofPattern("H:mm:ss")
+
     fun parse(csvText: String): List<InvoiceCsvReceipt> {
-        val lines = csvText.lineSequence().filter { it.isNotBlank() }.drop(1)
-        val receipts = mutableListOf<InvoiceCsvReceipt>()
-        var currentDate: LocalDate? = null
-        var currentMerchant: String? = null
-        var currentItems = mutableListOf<InvoiceCsvLineItem>()
+        val lines = csvText.lineSequence().filter { it.isNotBlank() }.toList()
+        if (lines.isEmpty()) return emptyList()
+        val header = parseCsvLine(lines[0]).map { it.trim() }
 
-        fun flush() {
-            val date = currentDate
-            val merchant = currentMerchant
-            if (date != null && merchant != null && currentItems.isNotEmpty()) {
-                receipts.add(InvoiceCsvReceipt(date, merchant, currentItems.toList()))
-            }
-            currentItems = mutableListOf()
-        }
+        val dateIdx = header.indexOf("消費時間")
+        val invoiceNumberIdx = header.indexOf("發票號碼")
+        val itemIdx = header.indexOf("消費品項")
+        val subtotalIdx = header.indexOf("小計")
+        val merchantIdx = header.indexOf("店家名稱")
+        require(invoiceNumberIdx >= 0) { "這個 CSV 不含「發票號碼」欄位，目前只支援 App 內建「分享」功能匯出的格式。" }
+        require(dateIdx >= 0 && itemIdx >= 0 && subtotalIdx >= 0 && merchantIdx >= 0) { "CSV 欄位格式不符，缺少必要欄位。" }
+        val maxIdx = maxOf(dateIdx, invoiceNumberIdx, itemIdx, subtotalIdx, merchantIdx)
 
-        for (line in lines) {
+        data class Row(val invoiceNumber: String, val occurredAt: LocalDateTime, val merchant: String, val item: InvoiceCsvLineItem)
+        val rows = lines.drop(1).mapNotNull { line ->
             val fields = parseCsvLine(line)
-            if (fields.size < 6) continue
-            val date = parseRocDate(fields[0].trim()) ?: continue
-            val name = fields[1].trim()
-            val subtotal = fields[4].trim().toDoubleOrNull()?.let { Math.round(it) } ?: continue
-            val merchant = fields[5].trim()
-            if (merchant.isBlank()) continue
-
-            if (date != currentDate || merchant != currentMerchant) {
-                flush()
-                currentDate = date
-                currentMerchant = merchant
-            }
-            currentItems.add(InvoiceCsvLineItem(name, subtotal))
+            if (fields.size <= maxIdx) return@mapNotNull null
+            val occurredAt = parseDateTime(fields[dateIdx].trim()) ?: return@mapNotNull null
+            val subtotal = fields[subtotalIdx].trim().toDoubleOrNull()?.let { Math.round(it) } ?: return@mapNotNull null
+            val merchant = fields[merchantIdx].trim()
+            val invoiceNumber = fields[invoiceNumberIdx].trim()
+            if (merchant.isBlank() || invoiceNumber.isBlank()) return@mapNotNull null
+            Row(invoiceNumber, occurredAt, merchant, InvoiceCsvLineItem(fields[itemIdx].trim(), subtotal))
         }
-        flush()
-        return receipts
+
+        return rows.groupBy { it.invoiceNumber }.values.map { group ->
+            val first = group.first()
+            InvoiceCsvReceipt(first.invoiceNumber, first.occurredAt, first.merchant, group.map { it.item })
+        }
     }
 
-    private fun parseRocDate(raw: String): LocalDate? {
-        if (raw.length != 7 || !raw.all { it.isDigit() }) return null
-        val rocYear = raw.substring(0, 3).toInt()
-        val month = raw.substring(3, 5).toInt()
-        val day = raw.substring(5, 7).toInt()
-        return runCatching { LocalDate.of(rocYear + 1911, month, day) }.getOrNull()
+    /** Accepts "yyyy/M/d H:mm:ss", falling back to date-only (midnight) when there's no time part. */
+    private fun parseDateTime(raw: String): LocalDateTime? {
+        val spaceIndex = raw.indexOf(' ')
+        if (spaceIndex < 0) {
+            val date = runCatching { LocalDate.parse(raw, dateOnlyFormatter) }.getOrNull() ?: return null
+            return date.atStartOfDay()
+        }
+        val date = runCatching { LocalDate.parse(raw.substring(0, spaceIndex), dateOnlyFormatter) }.getOrNull() ?: return null
+        val time = runCatching { LocalTime.parse(raw.substring(spaceIndex + 1), timeOnlyFormatter) }.getOrNull() ?: LocalTime.MIDNIGHT
+        return LocalDateTime.of(date, time)
     }
 
     private fun parseCsvLine(line: String): List<String> {
