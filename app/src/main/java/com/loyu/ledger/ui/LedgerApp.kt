@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -389,7 +390,20 @@ private fun TransactionListItem(row: TransactionRow, showDate: Boolean = true, o
             )
         },
         headlineContent = { Text(if (row.merchant.isNotBlank()) row.merchant else row.categoryName) },
-        supportingContent = { Text("${row.categoryIcon} ${row.categoryName} · ${row.accountName}") },
+        supportingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Text(
+                        row.accountName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Text("${row.categoryIcon} ${row.categoryName}", style = MaterialTheme.typography.bodySmall)
+            }
+        },
         trailingContent = {
             val prefix = if (row.type == TransactionType.EXPENSE) "-" else "+"
             val color = if (row.type == TransactionType.INCOME) IncomeGreen else Color.Unspecified
