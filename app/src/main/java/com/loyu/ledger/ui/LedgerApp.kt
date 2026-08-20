@@ -335,6 +335,9 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
             initialUri = pendingSharedInvoiceCsvUri,
             onDismiss = { showImportInvoices = false; pendingSharedInvoiceCsvUri = null },
             onLoadExistingKeys = { vm.existingTransactionKeys() },
+            onLoadIgnoredInvoiceNumbers = { vm.ignoredInvoiceNumbers() },
+            onMarkInvoicesIgnored = { vm.markInvoicesIgnored(it) },
+            onEnsureUncategorizedCategory = { vm.ensureUncategorizedCategory() },
             onImport = { entries -> vm.importInvoiceTransactions(entries) },
         )
     }
@@ -873,6 +876,9 @@ private fun InvoiceImportSheet(
     initialUri: Uri? = null,
     onDismiss: () -> Unit,
     onLoadExistingKeys: suspend () -> Set<String>,
+    onLoadIgnoredInvoiceNumbers: suspend () -> Set<String>,
+    onMarkInvoicesIgnored: suspend (List<String>) -> Unit,
+    onEnsureUncategorizedCategory: suspend () -> Long,
     onImport: suspend (List<TransactionEntity>) -> Unit,
 ) {
     val context = LocalContext.current
@@ -881,6 +887,7 @@ private fun InvoiceImportSheet(
 
     var receipts by remember { mutableStateOf<List<InvoiceCsvReceipt>>(emptyList()) }
     var existingKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var ignoredInvoiceNumbers by remember { mutableStateOf<Set<String>>(emptySet()) }
     var checked by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var categoryByIndex by remember { mutableStateOf<Map<Int, Long>>(emptyMap()) }
     var accountByIndex by remember { mutableStateOf<Map<Int, Long>>(emptyMap()) }
@@ -897,18 +904,24 @@ private fun InvoiceImportSheet(
                 ?: throw IllegalStateException("找不到檔案內容")
             val parsed = InvoiceCsvParser.parse(text)
             val keys = onLoadExistingKeys()
-            parsed to keys
-        }.onSuccess { (parsed, keys) ->
+            val ignored = onLoadIgnoredInvoiceNumbers()
+            val uncategorizedId = onEnsureUncategorizedCategory()
+            Triple(parsed, keys, ignored) to uncategorizedId
+        }.onSuccess { (triple, uncategorizedId) ->
+            val (parsed, keys, ignored) = triple
             receipts = parsed
             existingKeys = keys
-            checked = parsed.indices.filter { i -> parsed[i].total > 0 && "${parsed[i].date}|${parsed[i].merchant}|${parsed[i].total}" !in keys }.toSet()
-            val defaultCategoryId = expenseCategories.firstOrNull()?.id
-            categoryByIndex = if (defaultCategoryId != null) parsed.indices.associateWith { defaultCategoryId } else emptyMap()
-            val defaultAccountId = accounts.firstOrNull()?.id
+            ignoredInvoiceNumbers = ignored
+            checked = parsed.indices.filter { i ->
+                val r = parsed[i]
+                r.total > 0 && "${r.occurredAt.toLocalDate()}|${r.merchant}|${r.total}" !in keys && r.invoiceNumber !in ignored
+            }.toSet()
+            categoryByIndex = parsed.indices.associateWith { uncategorizedId }
+            val defaultAccountId = accounts.firstOrNull { it.name == "現金" }?.id ?: accounts.firstOrNull()?.id
             accountByIndex = if (defaultAccountId != null) parsed.indices.associateWith { defaultAccountId } else emptyMap()
             loading = false
             if (parsed.isEmpty()) {
-                loadError = "已讀取檔案，但找不到可辨識的消費紀錄。這個 CSV 的欄位格式可能跟預期的「消費日期,消費品項,單價,個數,小計,店家名稱」不一樣。"
+                loadError = "已讀取檔案，但找不到可辨識的消費紀錄。請確認這是 App 內建「分享」功能匯出的 CSV（需含「發票號碼」欄位）。"
             }
         }.onFailure { e ->
             loading = false
@@ -934,7 +947,7 @@ private fun InvoiceImportSheet(
         ) {
             Text("匯入電子發票明細", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "選擇從其他 App 匯出的電子發票消費明細 CSV，同一天、同一店家的品項會自動合併成一筆消費紀錄（折扣/退款會直接併入小計）。勾選要匯入的紀錄、選好分類與帳戶後一次建立。",
+                "選擇 App 內建「分享」功能匯出的電子發票消費明細 CSV，會依發票號碼把同一張發票的品項合併成一筆消費紀錄（折扣/退款會直接併入小計）。勾選要匯入的紀錄後一次建立，預設分類為「不分類」、帳戶為「現金」。取消勾選的紀錄會被記住，下次匯入時同一張發票會維持未勾選。",
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedButton(
@@ -959,8 +972,9 @@ private fun InvoiceImportSheet(
                 }
 
                 receipts.forEachIndexed { index, receipt ->
-                    val key = "${receipt.date}|${receipt.merchant}|${receipt.total}"
+                    val key = "${receipt.occurredAt.toLocalDate()}|${receipt.merchant}|${receipt.total}"
                     val isDuplicate = key in existingKeys
+                    val isIgnored = receipt.invoiceNumber in ignoredInvoiceNumbers
                     val isInvalid = receipt.total <= 0
                     val category = categories.firstOrNull { it.id == categoryByIndex[index] }
                     val account = accounts.firstOrNull { it.id == accountByIndex[index] }
@@ -975,8 +989,9 @@ private fun InvoiceImportSheet(
                         headlineContent = { Text(receipt.merchant, maxLines = 1) },
                         supportingContent = {
                             Column {
-                                Text("${receipt.date} · ${receipt.items.joinToString("、") { it.name }}", maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                Text("${receipt.occurredAt.toLocalDate()} · ${receipt.items.joinToString("、") { it.name }}", maxLines = 2, style = MaterialTheme.typography.bodySmall)
                                 if (isDuplicate) Text("可能與現有紀錄重複，預設不勾選", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
+                                if (!isDuplicate && isIgnored) Text("先前已選擇不匯入，預設不勾選", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
                                 if (isInvalid) Text("小計為 0 或負數，無法匯入", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
                                 Row {
                                     TextButton(onClick = { categoryPickerIndex = index }, contentPadding = PaddingValues(0.dp)) {
@@ -1007,11 +1022,13 @@ private fun InvoiceImportSheet(
                                 categoryId = catId,
                                 merchant = receipt.merchant,
                                 note = receipt.items.joinToString("、") { it.name },
-                                occurredAt = receipt.date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                                occurredAt = receipt.occurredAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
                             )
                         }
+                        val skippedInvoiceNumbers = receipts.indices.filter { it !in checked }.map { receipts[it].invoiceNumber }
                         scope.launch {
                             onImport(entries)
+                            onMarkInvoicesIgnored(skippedInvoiceNumbers)
                             Toast.makeText(context, "已匯入 ${entries.size} 筆記帳紀錄", Toast.LENGTH_SHORT).show()
                             onDismiss()
                         }

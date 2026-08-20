@@ -7,6 +7,7 @@ import com.loyu.ledger.data.local.AccountType
 import com.loyu.ledger.data.local.CategoryEntity
 import com.loyu.ledger.data.local.DebtDirection
 import com.loyu.ledger.data.local.DebtEntity
+import com.loyu.ledger.data.local.IgnoredInvoiceEntity
 import com.loyu.ledger.data.local.LedgerDao
 import com.loyu.ledger.data.local.TransactionEntity
 import com.loyu.ledger.data.local.TransactionType
@@ -14,6 +15,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.combine
+
+private const val UNCATEGORIZED_CATEGORY_NAME = "不分類"
 
 class LedgerRepository(private val dao: LedgerDao) {
     val accounts = dao.observeAccounts()
@@ -160,6 +163,20 @@ class LedgerRepository(private val dao: LedgerDao) {
 
     suspend fun importTransactions(entries: List<TransactionEntity>) {
         dao.insertTransactions(entries)
+    }
+
+    suspend fun ignoredInvoiceNumbers(): Set<String> = dao.getAllIgnoredInvoiceNumbersOnce().toSet()
+
+    suspend fun markInvoicesIgnored(invoiceNumbers: List<String>) {
+        if (invoiceNumbers.isEmpty()) return
+        dao.insertIgnoredInvoices(invoiceNumbers.map { IgnoredInvoiceEntity(it) })
+    }
+
+    /** Ensures a "不分類" expense category exists (for CSV-imported transactions that aren't assigned a real category) and returns its id. */
+    suspend fun ensureUncategorizedCategory(): Long {
+        val existing = dao.getAllCategoriesOnce().firstOrNull { it.name == UNCATEGORIZED_CATEGORY_NAME && it.type == TransactionType.EXPENSE }
+        if (existing != null) return existing.id
+        return dao.insertCategory(CategoryEntity(name = UNCATEGORIZED_CATEGORY_NAME, type = TransactionType.EXPENSE, icon = "❔"))
     }
 
     suspend fun exportBackup(): String {

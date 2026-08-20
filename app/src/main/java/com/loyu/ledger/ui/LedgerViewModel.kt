@@ -150,6 +150,12 @@ class LedgerViewModel(
     suspend fun importInvoiceTransactions(entries: List<TransactionEntity>) =
         repository.importTransactions(entries)
 
+    suspend fun ignoredInvoiceNumbers(): Set<String> = repository.ignoredInvoiceNumbers()
+
+    suspend fun markInvoicesIgnored(invoiceNumbers: List<String>) = repository.markInvoicesIgnored(invoiceNumbers)
+
+    suspend fun ensureUncategorizedCategory(): Long = repository.ensureUncategorizedCategory()
+
     class Factory(
         private val repository: LedgerRepository,
         private val settingsRepository: SettingsRepository,
