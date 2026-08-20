@@ -9,6 +9,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.IntentCompat
 import androidx.core.view.WindowCompat
@@ -19,10 +20,14 @@ import com.loyu.ledger.ui.LedgerViewModel
 import com.loyu.ledger.ui.theme.LoyuLedgerTheme
 
 class MainActivity : ComponentActivity() {
+    // singleTask launchMode reuses this Activity instance across repeated shares (see onNewIntent),
+    // so the shared Uri lives in Compose state rather than a local val captured once in onCreate.
+    private val sharedInvoiceCsvUri = mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as LedgerApplication
-        val sharedInvoiceCsvUri = extractSharedCsvUri(intent)
+        sharedInvoiceCsvUri.value = extractSharedCsvUri(intent)
         setContent {
             val vm: LedgerViewModel = viewModel(factory = LedgerViewModel.Factory(app.repository, app.settingsRepository))
             val themeMode by vm.themeMode.collectAsState()
@@ -36,9 +41,15 @@ class MainActivity : ComponentActivity() {
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
             }
             LoyuLedgerTheme(themeMode = themeMode) {
-                LedgerApp(vm, sharedInvoiceCsvUri = sharedInvoiceCsvUri)
+                LedgerApp(vm, sharedInvoiceCsvUri = sharedInvoiceCsvUri.value)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedInvoiceCsvUri.value = extractSharedCsvUri(intent)
     }
 }
 

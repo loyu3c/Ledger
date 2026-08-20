@@ -31,7 +31,7 @@ object InvoiceCsvParser {
     private val timeOnlyFormatter = DateTimeFormatter.ofPattern("H:mm:ss")
 
     fun parse(csvText: String): List<InvoiceCsvReceipt> {
-        val lines = csvText.lineSequence().filter { it.isNotBlank() }.toList()
+        val lines = csvText.removePrefix("﻿").lineSequence().filter { it.isNotBlank() }.toList()
         if (lines.isEmpty()) return emptyList()
         val header = parseCsvLine(lines[0]).map { it.trim() }
 
