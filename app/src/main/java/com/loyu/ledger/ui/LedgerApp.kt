@@ -328,6 +328,7 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
             onThemeModeChange = { vm.setThemeMode(it) },
             onExportBackup = { vm.exportBackup() },
             onImportBackup = { vm.importBackup(it) },
+            onClearAllData = { vm.clearAllData() },
             onOpenAccounts = { showSettings = false; showAccounts = true },
             onOpenCategories = { showSettings = false; showCategories = true },
             onOpenImportInvoices = { showSettings = false; showImportInvoices = true },
@@ -748,6 +749,7 @@ private fun SettingsSheet(
     onThemeModeChange: (ThemeMode) -> Unit,
     onExportBackup: suspend () -> String,
     onImportBackup: suspend (String) -> Unit,
+    onClearAllData: suspend () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenCategories: () -> Unit,
     onOpenImportInvoices: () -> Unit,
@@ -756,6 +758,7 @@ private fun SettingsSheet(
     val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf(currentApiKey) }
     var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var showClearConfirm by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -852,6 +855,21 @@ private fun SettingsSheet(
 
             HorizontalDivider()
 
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("清空資料", fontWeight = FontWeight.SemiBold, color = ExpenseRed)
+                Text(
+                    "清除所有帳戶、分類、交易紀錄、借貸與已略過的發票紀錄，且無法復原（會重新建立跟第一次安裝時一樣的預設帳戶與分類）。Groq API Key 不會被清除。建議先匯出備份。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                    onClick = { showClearConfirm = true },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ExpenseRed),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("清空所有資料") }
+            }
+
+            HorizontalDivider()
+
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("關於", fontWeight = FontWeight.SemiBold)
                 Text("有魚記帳（LoyuLedger）v0.1.0 · 開發中", style = MaterialTheme.typography.bodySmall)
@@ -884,6 +902,24 @@ private fun SettingsSheet(
                 }) { Text("確定匯入") }
             },
             dismissButton = { TextButton(onClick = { pendingImportUri = null }) { Text("取消") } },
+        )
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text("確定要清空所有資料嗎？") },
+            text = { Text("將清除所有帳戶、分類、交易紀錄、借貸與已略過的發票紀錄，且無法復原。Groq API Key 不會被清除。建議先匯出備份。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearConfirm = false
+                    scope.launch {
+                        onClearAllData()
+                        Toast.makeText(context, "資料已清空", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("確定清空") }
+            },
+            dismissButton = { TextButton(onClick = { showClearConfirm = false }) { Text("取消") } },
         )
     }
 }
