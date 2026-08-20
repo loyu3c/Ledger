@@ -67,7 +67,7 @@ private enum class ViewMode { LIST, CALENDAR }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LedgerApp(vm: LedgerViewModel) {
+fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
     val accounts by vm.accounts.collectAsState()
     val allAccounts by vm.allAccounts.collectAsState()
     val accountNet by vm.accountNet.collectAsState()
@@ -89,6 +89,8 @@ fun LedgerApp(vm: LedgerViewModel) {
     var showStatistics by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showImportInvoices by remember { mutableStateOf(false) }
+    var pendingSharedInvoiceCsvUri by remember { mutableStateOf(sharedInvoiceCsvUri) }
+    LaunchedEffect(pendingSharedInvoiceCsvUri) { if (pendingSharedInvoiceCsvUri != null) showImportInvoices = true }
     var showDebts by remember { mutableStateOf(false) }
     var showAssetsLiabilities by remember { mutableStateOf(false) }
     var showAddDebt by remember { mutableStateOf(false) }
@@ -330,7 +332,8 @@ fun LedgerApp(vm: LedgerViewModel) {
         InvoiceImportSheet(
             accounts = accounts,
             categories = categories,
-            onDismiss = { showImportInvoices = false },
+            initialUri = pendingSharedInvoiceCsvUri,
+            onDismiss = { showImportInvoices = false; pendingSharedInvoiceCsvUri = null },
             onLoadExistingKeys = { vm.existingTransactionKeys() },
             onImport = { entries -> vm.importInvoiceTransactions(entries) },
         )
@@ -867,6 +870,7 @@ private fun SettingsSheet(
 private fun InvoiceImportSheet(
     accounts: List<AccountEntity>,
     categories: List<CategoryEntity>,
+    initialUri: Uri? = null,
     onDismiss: () -> Unit,
     onLoadExistingKeys: suspend () -> Set<String>,
     onImport: suspend (List<TransactionEntity>) -> Unit,
@@ -884,30 +888,34 @@ private fun InvoiceImportSheet(
     var categoryPickerIndex by remember { mutableStateOf<Int?>(null) }
     var accountPickerIndex by remember { mutableStateOf<Int?>(null) }
 
+    suspend fun loadCsv(uri: Uri) {
+        loading = true
+        runCatching {
+            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: throw IllegalStateException("empty file")
+            val parsed = InvoiceCsvParser.parse(text)
+            val keys = onLoadExistingKeys()
+            parsed to keys
+        }.onSuccess { (parsed, keys) ->
+            receipts = parsed
+            existingKeys = keys
+            checked = parsed.indices.filter { i -> parsed[i].total > 0 && "${parsed[i].date}|${parsed[i].merchant}|${parsed[i].total}" !in keys }.toSet()
+            val defaultCategoryId = expenseCategories.firstOrNull()?.id
+            categoryByIndex = if (defaultCategoryId != null) parsed.indices.associateWith { defaultCategoryId } else emptyMap()
+            val defaultAccountId = accounts.firstOrNull()?.id
+            accountByIndex = if (defaultAccountId != null) parsed.indices.associateWith { defaultAccountId } else emptyMap()
+            loading = false
+        }.onFailure {
+            loading = false
+            Toast.makeText(context, "發票明細 CSV 格式無法解析", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(initialUri) { initialUri?.let { loadCsv(it) } }
+
     val pickCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        loading = true
-        scope.launch {
-            runCatching {
-                val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                    ?: throw IllegalStateException("empty file")
-                val parsed = InvoiceCsvParser.parse(text)
-                val keys = onLoadExistingKeys()
-                parsed to keys
-            }.onSuccess { (parsed, keys) ->
-                receipts = parsed
-                existingKeys = keys
-                checked = parsed.indices.filter { i -> parsed[i].total > 0 && "${parsed[i].date}|${parsed[i].merchant}|${parsed[i].total}" !in keys }.toSet()
-                val defaultCategoryId = expenseCategories.firstOrNull()?.id
-                categoryByIndex = if (defaultCategoryId != null) parsed.indices.associateWith { defaultCategoryId } else emptyMap()
-                val defaultAccountId = accounts.firstOrNull()?.id
-                accountByIndex = if (defaultAccountId != null) parsed.indices.associateWith { defaultAccountId } else emptyMap()
-                loading = false
-            }.onFailure {
-                loading = false
-                Toast.makeText(context, "發票明細 CSV 格式無法解析", Toast.LENGTH_SHORT).show()
-            }
-        }
+        scope.launch { loadCsv(uri) }
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
