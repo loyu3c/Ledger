@@ -179,6 +179,12 @@ class LedgerRepository(private val dao: LedgerDao) {
         return dao.insertCategory(CategoryEntity(name = UNCATEGORIZED_CATEGORY_NAME, type = TransactionType.EXPENSE, icon = "❔"))
     }
 
+    /** The "現金" account's id if one exists, else the first active account, for CSV-imported transactions. Queries fresh from the DB rather than relying on the (possibly not-yet-loaded) reactive account list. */
+    suspend fun defaultCashAccountId(): Long? {
+        val activeAccounts = dao.getAllAccountsOnce().filter { it.isActive }
+        return activeAccounts.firstOrNull { it.name == "現金" }?.id ?: activeAccounts.firstOrNull()?.id
+    }
+
     suspend fun exportBackup(): String {
         val accounts = dao.getAllAccountsOnce()
         val categories = dao.getAllCategoriesOnce()

@@ -343,6 +343,7 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
             onLoadIgnoredInvoiceNumbers = { vm.ignoredInvoiceNumbers() },
             onMarkInvoicesIgnored = { vm.markInvoicesIgnored(it) },
             onEnsureUncategorizedCategory = { vm.ensureUncategorizedCategory() },
+            onGetDefaultAccountId = { vm.defaultCashAccountId() },
             onImport = { entries -> vm.importInvoiceTransactions(entries) },
         )
     }
@@ -884,6 +885,7 @@ private fun InvoiceImportSheet(
     onLoadIgnoredInvoiceNumbers: suspend () -> Set<String>,
     onMarkInvoicesIgnored: suspend (List<String>) -> Unit,
     onEnsureUncategorizedCategory: suspend () -> Long,
+    onGetDefaultAccountId: suspend () -> Long?,
     onImport: suspend (List<TransactionEntity>) -> Unit,
 ) {
     val context = LocalContext.current
@@ -901,6 +903,14 @@ private fun InvoiceImportSheet(
     var categoryPickerIndex by remember { mutableStateOf<Int?>(null) }
     var accountPickerIndex by remember { mutableStateOf<Int?>(null) }
 
+    data class LoadResult(
+        val parsed: List<InvoiceCsvReceipt>,
+        val keys: Set<String>,
+        val ignored: Set<String>,
+        val uncategorizedId: Long,
+        val defaultAccountId: Long?,
+    )
+
     suspend fun loadCsv(uri: Uri) {
         loading = true
         loadError = null
@@ -908,12 +918,15 @@ private fun InvoiceImportSheet(
             val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                 ?: throw IllegalStateException("找不到檔案內容")
             val parsed = InvoiceCsvParser.parse(text)
-            val keys = onLoadExistingKeys()
-            val ignored = onLoadIgnoredInvoiceNumbers()
-            val uncategorizedId = onEnsureUncategorizedCategory()
-            Triple(parsed, keys, ignored) to uncategorizedId
-        }.onSuccess { (triple, uncategorizedId) ->
-            val (parsed, keys, ignored) = triple
+            LoadResult(
+                parsed = parsed,
+                keys = onLoadExistingKeys(),
+                ignored = onLoadIgnoredInvoiceNumbers(),
+                uncategorizedId = onEnsureUncategorizedCategory(),
+                defaultAccountId = onGetDefaultAccountId(),
+            )
+        }.onSuccess { result ->
+            val (parsed, keys, ignored, uncategorizedId, defaultAccountId) = result
             receipts = parsed
             existingKeys = keys
             ignoredInvoiceNumbers = ignored
@@ -922,7 +935,6 @@ private fun InvoiceImportSheet(
                 r.total > 0 && "${r.occurredAt.toLocalDate()}|${r.merchant}|${r.total}" !in keys && r.invoiceNumber !in ignored
             }.toSet()
             categoryByIndex = parsed.indices.associateWith { uncategorizedId }
-            val defaultAccountId = accounts.firstOrNull { it.name == "現金" }?.id ?: accounts.firstOrNull()?.id
             accountByIndex = if (defaultAccountId != null) parsed.indices.associateWith { defaultAccountId } else emptyMap()
             loading = false
             if (parsed.isEmpty()) {
@@ -999,12 +1011,12 @@ private fun InvoiceImportSheet(
                                 if (!isDuplicate && isIgnored) Text("先前已選擇不匯入，預設不勾選", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
                                 if (isInvalid) Text("小計為 0 或負數，無法匯入", color = ExpenseRed, style = MaterialTheme.typography.bodySmall)
                                 Row {
-                                    TextButton(onClick = { categoryPickerIndex = index }, contentPadding = PaddingValues(0.dp)) {
-                                        Text("分類：${category?.let { "${it.icon} ${it.name}" } ?: "未選擇"}")
-                                    }
-                                    Spacer(Modifier.width(12.dp))
                                     TextButton(onClick = { accountPickerIndex = index }, contentPadding = PaddingValues(0.dp)) {
                                         Text("帳戶：${account?.name ?: "未選擇"}")
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    TextButton(onClick = { categoryPickerIndex = index }, contentPadding = PaddingValues(0.dp)) {
+                                        Text("分類：${category?.let { "${it.icon} ${it.name}" } ?: "未選擇"}")
                                     }
                                 }
                             }

@@ -156,6 +156,8 @@ class LedgerViewModel(
 
     suspend fun ensureUncategorizedCategory(): Long = repository.ensureUncategorizedCategory()
 
+    suspend fun defaultCashAccountId(): Long? = repository.defaultCashAccountId()
+
     class Factory(
         private val repository: LedgerRepository,
         private val settingsRepository: SettingsRepository,
