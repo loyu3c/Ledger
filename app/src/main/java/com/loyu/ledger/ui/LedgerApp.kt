@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -162,9 +163,10 @@ fun LedgerApp(vm: LedgerViewModel) {
                     SummaryRow(income = income, expense = expense)
                 }
                 val timeline = buildTimeline(transactions, monthDebts)
+                val showDateFlags = dateShowFlags(timeline, zone)
                 if (timeline.isEmpty()) item { Text("這個月還沒有紀錄，按右下角「記一筆」開始。") }
-                items(timeline, key = { it.key }) { entry ->
-                    TimelineListItem(entry = entry, accounts = accounts, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
+                itemsIndexed(timeline, key = { _, entry -> entry.key }) { index, entry ->
+                    TimelineListItem(entry = entry, accounts = accounts, showDate = showDateFlags[index], onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
                     HorizontalDivider()
                 }
             } else {
@@ -201,11 +203,12 @@ fun LedgerApp(vm: LedgerViewModel) {
                         SummaryRow(income = dayIncome, expense = dayExpense)
                     }
                     val dayTimeline = buildTimeline(dayTransactions, dayDebts)
+                    val dayShowDateFlags = dateShowFlags(dayTimeline, zone)
                     if (dayTimeline.isEmpty()) {
                         item { Text("這天還沒有紀錄。") }
                     } else {
-                        items(dayTimeline, key = { it.key }) { entry ->
-                            TimelineListItem(entry = entry, accounts = accounts, onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
+                        itemsIndexed(dayTimeline, key = { _, entry -> entry.key }) { index, entry ->
+                            TimelineListItem(entry = entry, accounts = accounts, showDate = dayShowDateFlags[index], onClickTransaction = { editingRow = it }, onClickDebt = { showDebts = true })
                             HorizontalDivider()
                         }
                     }
@@ -362,12 +365,12 @@ private val ExpenseRed = Color(0xFFC62828)
 private val DebtBlue = Color(0xFF1565C0)
 
 @Composable
-private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
+private fun TransactionListItem(row: TransactionRow, showDate: Boolean = true, onClick: () -> Unit) {
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
         leadingContent = {
             Text(
-                formatDateShort(row.occurredAt),
+                if (showDate) formatDateShort(row.occurredAt) else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.width(36.dp),
@@ -392,25 +395,35 @@ private fun buildTimeline(transactions: List<TransactionRow>, debts: List<DebtEn
     (transactions.map { TimelineEntry.Txn(it) } + debts.map { TimelineEntry.Debt(it) })
         .sortedByDescending { it.occurredAt }
 
+/** True at index 0, and wherever an entry's calendar day differs from the previous entry's, so same-day runs only label the date once. */
+private fun dateShowFlags(entries: List<TimelineEntry>, zone: ZoneId): List<Boolean> =
+    entries.mapIndexed { index, entry ->
+        index == 0 ||
+            Instant.ofEpochMilli(entry.occurredAt).atZone(zone).toLocalDate() !=
+            Instant.ofEpochMilli(entries[index - 1].occurredAt).atZone(zone).toLocalDate()
+    }
+
 @Composable
 private fun TimelineListItem(
     entry: TimelineEntry,
     accounts: List<AccountEntity>,
+    showDate: Boolean,
     onClickTransaction: (TransactionRow) -> Unit,
     onClickDebt: (DebtEntity) -> Unit,
 ) {
     when (entry) {
-        is TimelineEntry.Txn -> TransactionListItem(row = entry.row, onClick = { onClickTransaction(entry.row) })
+        is TimelineEntry.Txn -> TransactionListItem(row = entry.row, showDate = showDate, onClick = { onClickTransaction(entry.row) })
         is TimelineEntry.Debt -> DebtListItem(
             debt = entry.debt,
             accountName = accounts.firstOrNull { it.id == entry.debt.accountId }?.name,
+            showDate = showDate,
             onClick = { onClickDebt(entry.debt) },
         )
     }
 }
 
 @Composable
-private fun DebtListItem(debt: DebtEntity, accountName: String? = null, onClick: () -> Unit) {
+private fun DebtListItem(debt: DebtEntity, accountName: String? = null, showDate: Boolean = true, onClick: () -> Unit) {
     val directionLabel = if (debt.direction == DebtDirection.LEND) "借出/代墊" else "借入"
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
     val contentColor = if (debt.isSettled) mutedColor else Color.Unspecified
@@ -418,7 +431,7 @@ private fun DebtListItem(debt: DebtEntity, accountName: String? = null, onClick:
         modifier = Modifier.clickable(onClick = onClick),
         leadingContent = {
             Text(
-                formatDateShort(debt.occurredAt),
+                if (showDate) formatDateShort(debt.occurredAt) else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = mutedColor,
                 modifier = Modifier.width(36.dp),
