@@ -885,14 +885,16 @@ private fun InvoiceImportSheet(
     var categoryByIndex by remember { mutableStateOf<Map<Int, Long>>(emptyMap()) }
     var accountByIndex by remember { mutableStateOf<Map<Int, Long>>(emptyMap()) }
     var loading by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf<String?>(null) }
     var categoryPickerIndex by remember { mutableStateOf<Int?>(null) }
     var accountPickerIndex by remember { mutableStateOf<Int?>(null) }
 
     suspend fun loadCsv(uri: Uri) {
         loading = true
+        loadError = null
         runCatching {
             val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                ?: throw IllegalStateException("empty file")
+                ?: throw IllegalStateException("找不到檔案內容")
             val parsed = InvoiceCsvParser.parse(text)
             val keys = onLoadExistingKeys()
             parsed to keys
@@ -905,8 +907,12 @@ private fun InvoiceImportSheet(
             val defaultAccountId = accounts.firstOrNull()?.id
             accountByIndex = if (defaultAccountId != null) parsed.indices.associateWith { defaultAccountId } else emptyMap()
             loading = false
-        }.onFailure {
+            if (parsed.isEmpty()) {
+                loadError = "已讀取檔案，但找不到可辨識的消費紀錄。這個 CSV 的欄位格式可能跟預期的「消費日期,消費品項,單價,個數,小計,店家名稱」不一樣。"
+            }
+        }.onFailure { e ->
             loading = false
+            loadError = "讀取或解析 CSV 失敗：${e.message ?: e::class.simpleName}"
             Toast.makeText(context, "發票明細 CSV 格式無法解析", Toast.LENGTH_SHORT).show()
         }
     }
@@ -935,6 +941,7 @@ private fun InvoiceImportSheet(
                 onClick = { pickCsvLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "*/*")) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("選擇 CSV 檔案") }
+            loadError?.let { Text(it, color = ExpenseRed, style = MaterialTheme.typography.bodySmall) }
 
             if (loading) {
                 Text("解析中…")
