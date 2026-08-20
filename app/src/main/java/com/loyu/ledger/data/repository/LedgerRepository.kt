@@ -198,10 +198,9 @@ class LedgerRepository(private val dao: LedgerDao) {
         dao.replaceAllData(data.accounts, data.categories, data.transactions, data.debts)
     }
 
-    /** Wipes all accounts, categories, transactions, debts, and ignored-invoice records, then reseeds the same defaults used on first launch. Does not touch the Groq API key, which lives outside Room in SettingsRepository. */
-    suspend fun clearAllData() {
-        dao.clearAllData()
-        seedDefaultsIfNeeded()
+    /** Wipes all transactions and debts, leaving accounts, categories, and other settings untouched. */
+    suspend fun clearTransactionsAndDebts() {
+        dao.clearTransactionsAndDebts()
     }
 
     suspend fun seedDefaultsIfNeeded() {

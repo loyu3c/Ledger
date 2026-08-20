@@ -158,7 +158,7 @@ class LedgerViewModel(
 
     suspend fun defaultCashAccountId(): Long? = repository.defaultCashAccountId()
 
-    suspend fun clearAllData() = repository.clearAllData()
+    suspend fun clearTransactionsAndDebts() = repository.clearTransactionsAndDebts()
 
     class Factory(
         private val repository: LedgerRepository,
