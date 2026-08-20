@@ -365,6 +365,14 @@ private val DebtBlue = Color(0xFF1565C0)
 private fun TransactionListItem(row: TransactionRow, onClick: () -> Unit) {
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
+        leadingContent = {
+            Text(
+                formatDateShort(row.occurredAt),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(36.dp),
+            )
+        },
         headlineContent = { Text(if (row.merchant.isNotBlank()) row.merchant else row.categoryName) },
         supportingContent = { Text("${row.categoryIcon} ${row.categoryName} · ${row.accountName}") },
         trailingContent = {
@@ -408,6 +416,14 @@ private fun DebtListItem(debt: DebtEntity, accountName: String? = null, onClick:
     val contentColor = if (debt.isSettled) mutedColor else Color.Unspecified
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
+        leadingContent = {
+            Text(
+                formatDateShort(debt.occurredAt),
+                style = MaterialTheme.typography.bodySmall,
+                color = mutedColor,
+                modifier = Modifier.width(36.dp),
+            )
+        },
         headlineContent = { Text(debt.counterparty, color = contentColor) },
         supportingContent = {
             Text(
@@ -1759,6 +1775,7 @@ private fun monthLabel(month: LocalDate): String = month.format(monthLabelFormat
 
 private fun money(value: Long): String = "NT$ ${NumberFormat.getIntegerInstance(Locale.TAIWAN).format(value)}"
 private fun formatDateOnly(epoch: Long): String = SimpleDateFormat("yyyy/MM/dd", Locale.TAIWAN).format(Date(epoch))
+private fun formatDateShort(epoch: Long): String = SimpleDateFormat("M/d", Locale.TAIWAN).format(Date(epoch))
 
 private val calculatorOperators = charArrayOf('+', '−', '×', '÷')
 
