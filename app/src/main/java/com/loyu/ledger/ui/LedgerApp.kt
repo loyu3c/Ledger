@@ -328,7 +328,7 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
             onThemeModeChange = { vm.setThemeMode(it) },
             onExportBackup = { vm.exportBackup() },
             onImportBackup = { vm.importBackup(it) },
-            onClearAllData = { vm.clearAllData() },
+            onClearTransactionsAndDebts = { vm.clearTransactionsAndDebts() },
             onOpenAccounts = { showSettings = false; showAccounts = true },
             onOpenCategories = { showSettings = false; showCategories = true },
             onOpenImportInvoices = { showSettings = false; showImportInvoices = true },
@@ -749,7 +749,7 @@ private fun SettingsSheet(
     onThemeModeChange: (ThemeMode) -> Unit,
     onExportBackup: suspend () -> String,
     onImportBackup: suspend (String) -> Unit,
-    onClearAllData: suspend () -> Unit,
+    onClearTransactionsAndDebts: suspend () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenCategories: () -> Unit,
     onOpenImportInvoices: () -> Unit,
@@ -858,14 +858,14 @@ private fun SettingsSheet(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("清空資料", fontWeight = FontWeight.SemiBold, color = ExpenseRed)
                 Text(
-                    "清除所有帳戶、分類、交易紀錄、借貸與已略過的發票紀錄，且無法復原（會重新建立跟第一次安裝時一樣的預設帳戶與分類）。Groq API Key 不會被清除。建議先匯出備份。",
+                    "只清除收支記錄與借貸記錄，且無法復原。帳戶、分類與其他設定（含 Groq API Key）都不會被清除。建議先匯出備份。",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedButton(
                     onClick = { showClearConfirm = true },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = ExpenseRed),
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("清空所有資料") }
+                ) { Text("清空收支與借貸記錄") }
             }
 
             HorizontalDivider()
@@ -908,14 +908,14 @@ private fun SettingsSheet(
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
-            title = { Text("確定要清空所有資料嗎？") },
-            text = { Text("將清除所有帳戶、分類、交易紀錄、借貸與已略過的發票紀錄，且無法復原。Groq API Key 不會被清除。建議先匯出備份。") },
+            title = { Text("確定要清空收支與借貸記錄嗎？") },
+            text = { Text("將清除所有收支記錄與借貸記錄，且無法復原。帳戶、分類與其他設定都不會被清除。建議先匯出備份。") },
             confirmButton = {
                 TextButton(onClick = {
                     showClearConfirm = false
                     scope.launch {
-                        onClearAllData()
-                        Toast.makeText(context, "資料已清空", Toast.LENGTH_SHORT).show()
+                        onClearTransactionsAndDebts()
+                        Toast.makeText(context, "收支與借貸記錄已清空", Toast.LENGTH_SHORT).show()
                     }
                 }) { Text("確定清空") }
             },
