@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
@@ -392,20 +393,20 @@ private fun TransactionListItem(row: TransactionRow, showDate: Boolean = true, o
                 modifier = Modifier.width(36.dp),
             )
         },
-        headlineContent = { Text(if (row.merchant.isNotBlank()) row.merchant else row.categoryName) },
+        headlineContent = {
+            Text(
+                if (row.merchant.isNotBlank()) row.merchant else row.categoryName,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
         supportingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(4.dp), color = accountColor(row.accountColorIndex)) {
-                    Text(
-                        row.accountName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                    )
-                }
-                Spacer(Modifier.width(6.dp))
-                Text("${row.categoryIcon} ${row.categoryName}", style = MaterialTheme.typography.bodySmall)
-            }
+            Text(
+                row.note.ifBlank { "${row.categoryIcon} ${row.categoryName}" },
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         },
         trailingContent = {
             val prefix = if (row.type == TransactionType.EXPENSE) "-" else "+"
