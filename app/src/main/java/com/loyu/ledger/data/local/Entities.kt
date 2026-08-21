@@ -18,6 +18,8 @@ data class AccountEntity(
     val type: AccountType,
     val openingBalance: Long = 0,
     val isActive: Boolean = true,
+    val sortOrder: Int = 0,
+    val colorIndex: Int = 0,
 )
 
 @Entity(tableName = "categories")
@@ -92,6 +94,7 @@ data class TransactionRow(
     val note: String,
     val occurredAt: Long,
     val accountName: String,
+    val accountColorIndex: Int,
     val categoryName: String,
     val categoryIcon: String,
 )

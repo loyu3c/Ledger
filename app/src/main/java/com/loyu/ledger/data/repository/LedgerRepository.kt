@@ -16,7 +16,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.combine
 
-private const val UNCATEGORIZED_CATEGORY_NAME = "不分類"
+private const val UNCATEGORIZED_CATEGORY_NAME = "未分類"
 
 class LedgerRepository(private val dao: LedgerDao) {
     val accounts = dao.observeAccounts()
@@ -96,15 +96,18 @@ class LedgerRepository(private val dao: LedgerDao) {
         dao.deleteTransaction(id)
     }
 
-    suspend fun addAccount(name: String, type: AccountType, openingBalance: Long) {
+    suspend fun addAccount(name: String, type: AccountType, openingBalance: Long, colorIndex: Int) {
         require(name.isNotBlank())
-        dao.insertAccount(AccountEntity(name = name.trim(), type = type, openingBalance = openingBalance))
+        val nextSortOrder = (dao.getAllAccountsOnce().maxOfOrNull { it.sortOrder } ?: -1) + 1
+        dao.insertAccount(
+            AccountEntity(name = name.trim(), type = type, openingBalance = openingBalance, sortOrder = nextSortOrder, colorIndex = colorIndex)
+        )
     }
 
-    suspend fun updateAccount(id: Long, name: String, type: AccountType, openingBalance: Long) {
+    suspend fun updateAccount(id: Long, name: String, type: AccountType, openingBalance: Long, colorIndex: Int) {
         require(name.isNotBlank())
         val existing = dao.getAccount(id) ?: return
-        dao.updateAccount(existing.copy(name = name.trim(), type = type, openingBalance = openingBalance))
+        dao.updateAccount(existing.copy(name = name.trim(), type = type, openingBalance = openingBalance, colorIndex = colorIndex))
     }
 
     suspend fun setAccountActive(id: Long, isActive: Boolean) {
@@ -112,9 +115,12 @@ class LedgerRepository(private val dao: LedgerDao) {
         dao.updateAccount(existing.copy(isActive = isActive))
     }
 
+    suspend fun reorderAccounts(orderedIds: List<Long>) = dao.reorderAccounts(orderedIds)
+
     suspend fun addCategory(name: String, type: TransactionType, icon: String) {
         require(name.isNotBlank())
-        dao.insertCategory(CategoryEntity(name = name.trim(), type = type, icon = icon.ifBlank { "💰" }))
+        val nextSortOrder = (dao.getAllCategoriesOnce().filter { it.type == type }.maxOfOrNull { it.sortOrder } ?: -1) + 1
+        dao.insertCategory(CategoryEntity(name = name.trim(), type = type, icon = icon.ifBlank { "💰" }, sortOrder = nextSortOrder))
     }
 
     suspend fun updateCategory(id: Long, name: String, type: TransactionType, icon: String) {
@@ -127,6 +133,8 @@ class LedgerRepository(private val dao: LedgerDao) {
         val existing = dao.getCategory(id) ?: return
         dao.updateCategory(existing.copy(isActive = isActive))
     }
+
+    suspend fun reorderCategories(orderedIds: List<Long>) = dao.reorderCategories(orderedIds)
 
     suspend fun addDebt(direction: DebtDirection, counterparty: String, amount: Long, occurredAt: Long, dueDate: Long?, note: String, accountId: Long) {
         require(counterparty.isNotBlank())
@@ -172,7 +180,7 @@ class LedgerRepository(private val dao: LedgerDao) {
         dao.insertIgnoredInvoices(invoiceNumbers.map { IgnoredInvoiceEntity(it) })
     }
 
-    /** Ensures a "不分類" expense category exists (for CSV-imported transactions that aren't assigned a real category) and returns its id. */
+    /** Ensures a "未分類" expense category exists (for CSV-imported transactions that aren't assigned a real category) and returns its id. */
     suspend fun ensureUncategorizedCategory(): Long {
         val existing = dao.getAllCategoriesOnce().firstOrNull { it.name == UNCATEGORIZED_CATEGORY_NAME && it.type == TransactionType.EXPENSE }
         if (existing != null) return existing.id
@@ -205,9 +213,9 @@ class LedgerRepository(private val dao: LedgerDao) {
 
     suspend fun seedDefaultsIfNeeded() {
         if (dao.accountCount() > 0) return
-        dao.insertAccount(AccountEntity(name = "現金", type = AccountType.CASH))
-        dao.insertAccount(AccountEntity(name = "銀行帳戶", type = AccountType.BANK))
-        dao.insertAccount(AccountEntity(name = "信用卡", type = AccountType.CREDIT_CARD))
+        dao.insertAccount(AccountEntity(name = "現金", type = AccountType.CASH, sortOrder = 0, colorIndex = 0))
+        dao.insertAccount(AccountEntity(name = "銀行帳戶", type = AccountType.BANK, sortOrder = 1, colorIndex = 1))
+        dao.insertAccount(AccountEntity(name = "信用卡", type = AccountType.CREDIT_CARD, sortOrder = 0, colorIndex = 2))
 
         listOf(
             CategoryEntity(name = "餐飲", type = TransactionType.EXPENSE, icon = "🍜", sortOrder = 1),

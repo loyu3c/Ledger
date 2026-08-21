@@ -256,9 +256,10 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
         AccountManagementSheet(
             accounts = allAccounts,
             onDismiss = { showAccounts = false },
-            onAdd = { name, type, openingBalance -> vm.addAccount(name, type, openingBalance) },
-            onEdit = { id, name, type, openingBalance -> vm.updateAccount(id, name, type, openingBalance) },
+            onAdd = { name, type, openingBalance, colorIndex -> vm.addAccount(name, type, openingBalance, colorIndex) },
+            onEdit = { id, name, type, openingBalance, colorIndex -> vm.updateAccount(id, name, type, openingBalance, colorIndex) },
             onToggleActive = { id, isActive -> vm.setAccountActive(id, isActive) },
+            onReorder = { orderedIds -> vm.reorderAccounts(orderedIds) },
         )
     }
 
@@ -269,6 +270,7 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
             onAdd = { name, type, icon -> vm.addCategory(name, type, icon) },
             onEdit = { id, name, type, icon -> vm.updateCategory(id, name, type, icon) },
             onToggleActive = { id, isActive -> vm.setCategoryActive(id, isActive) },
+            onReorder = { orderedIds -> vm.reorderCategories(orderedIds) },
         )
     }
 
@@ -393,11 +395,11 @@ private fun TransactionListItem(row: TransactionRow, showDate: Boolean = true, o
         headlineContent = { Text(if (row.merchant.isNotBlank()) row.merchant else row.categoryName) },
         supportingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                Surface(shape = RoundedCornerShape(4.dp), color = accountColor(row.accountColorIndex)) {
                     Text(
                         row.accountName,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        color = Color.White,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
@@ -1014,7 +1016,7 @@ private fun InvoiceImportSheet(
         ) {
             Text("匯入電子發票明細", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "選擇 App 內建「分享」功能匯出的電子發票消費明細 CSV，會依發票號碼把同一張發票的品項合併成一筆消費紀錄（折扣/退款會直接併入小計）。勾選要匯入的紀錄後一次建立，預設分類為「不分類」、帳戶為「現金」。取消勾選的紀錄會被記住，下次匯入時同一張發票會維持未勾選。",
+                "選擇 App 內建「分享」功能匯出的電子發票消費明細 CSV，會依發票號碼把同一張發票的品項合併成一筆消費紀錄（折扣/退款會直接併入小計）。勾選要匯入的紀錄後一次建立，預設分類為「未分類」、帳戶為「現金」。取消勾選的紀錄會被記住，下次匯入時同一張發票會維持未勾選。",
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedButton(
@@ -1525,9 +1527,10 @@ private fun DebtFormDialog(
 private fun AccountManagementSheet(
     accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onAdd: (String, AccountType, Long) -> Unit,
-    onEdit: (Long, String, AccountType, Long) -> Unit,
+    onAdd: (String, AccountType, Long, Int) -> Unit,
+    onEdit: (Long, String, AccountType, Long, Int) -> Unit,
     onToggleActive: (Long, Boolean) -> Unit,
+    onReorder: (List<Long>) -> Unit,
 ) {
     var editingAccount by remember { mutableStateOf<AccountEntity?>(null) }
     var showAddForm by remember { mutableStateOf(false) }
@@ -1544,14 +1547,31 @@ private fun AccountManagementSheet(
                 SegmentedButton(selected = !filterLiability, onClick = { filterLiability = false }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("資產") }
                 SegmentedButton(selected = filterLiability, onClick = { filterLiability = true }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("負債") }
             }
-            filtered.forEach { account ->
+            filtered.forEachIndexed { index, account ->
                 ListItem(
+                    leadingContent = {
+                        Box(Modifier.size(16.dp).clip(CircleShape).background(accountColor(account.colorIndex)))
+                    },
                     headlineContent = { Text(account.name) },
                     supportingContent = {
                         Text(if (account.isActive) accountTypeLabel(account.type) else "${accountTypeLabel(account.type)} · 已停用")
                     },
                     trailingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                TextButton(
+                                    onClick = { onReorder(filtered.toMutableList().also { it.swap(index, index - 1) }.map { it.id }) },
+                                    enabled = index > 0,
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.height(20.dp).width(28.dp),
+                                ) { Text("▲", fontSize = 10.sp) }
+                                TextButton(
+                                    onClick = { onReorder(filtered.toMutableList().also { it.swap(index, index + 1) }.map { it.id }) },
+                                    enabled = index < filtered.lastIndex,
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.height(20.dp).width(28.dp),
+                                ) { Text("▼", fontSize = 10.sp) }
+                            }
                             TextButton(onClick = { editingAccount = account }) { Text("編輯") }
                             Switch(checked = account.isActive, onCheckedChange = { onToggleActive(account.id, it) })
                         }
@@ -1567,7 +1587,7 @@ private fun AccountManagementSheet(
             existing = null,
             defaultType = if (filterLiability) AccountType.CREDIT_CARD else AccountType.CASH,
             onDismiss = { showAddForm = false },
-            onSave = { name, type, openingBalance -> onAdd(name, type, openingBalance); showAddForm = false },
+            onSave = { name, type, openingBalance, colorIndex -> onAdd(name, type, openingBalance, colorIndex); showAddForm = false },
         )
     }
     editingAccount?.let { account ->
@@ -1575,9 +1595,14 @@ private fun AccountManagementSheet(
             existing = account,
             defaultType = account.type,
             onDismiss = { editingAccount = null },
-            onSave = { name, type, openingBalance -> onEdit(account.id, name, type, openingBalance); editingAccount = null },
+            onSave = { name, type, openingBalance, colorIndex -> onEdit(account.id, name, type, openingBalance, colorIndex); editingAccount = null },
         )
     }
+}
+
+private fun <T> MutableList<T>.swap(i: Int, j: Int) {
+    if (i !in indices || j !in indices) return
+    val tmp = this[i]; this[i] = this[j]; this[j] = tmp
 }
 
 @Composable
@@ -1585,22 +1610,41 @@ private fun AccountFormDialog(
     existing: AccountEntity?,
     defaultType: AccountType,
     onDismiss: () -> Unit,
-    onSave: (String, AccountType, Long) -> Unit,
+    onSave: (String, AccountType, Long, Int) -> Unit,
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var type by remember { mutableStateOf(existing?.type ?: defaultType) }
     var openingBalanceText by remember { mutableStateOf(existing?.openingBalance?.toString() ?: "0") }
+    var colorIndex by remember { mutableStateOf(existing?.colorIndex ?: 0) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "新增帳戶" else "編輯帳戶") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("帳戶名稱") }, singleLine = true)
                 Text("類型", fontWeight = FontWeight.SemiBold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AccountType.entries.forEach { t ->
                         FilterChip(selected = type == t, onClick = { type = t }, label = { Text(accountTypeLabel(t)) })
+                    }
+                }
+                Text("標籤顏色", fontWeight = FontWeight.SemiBold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    chartPalette.indices.forEach { i ->
+                        val selected = colorIndex == i
+                        Box(
+                            modifier = Modifier.size(32.dp)
+                                .clip(CircleShape)
+                                .background(accountColor(i))
+                                .clickable { colorIndex = i },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (selected) Text("✓", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
                 OutlinedTextField(
@@ -1621,7 +1665,7 @@ private fun AccountFormDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name.trim(), type, openingBalanceText.toLongOrNull() ?: 0) },
+                onClick = { onSave(name.trim(), type, openingBalanceText.toLongOrNull() ?: 0, colorIndex) },
                 enabled = name.isNotBlank(),
             ) { Text("儲存") }
         },
@@ -1644,10 +1688,12 @@ private fun CategoryManagementSheet(
     onAdd: (String, TransactionType, String) -> Unit,
     onEdit: (Long, String, TransactionType, String) -> Unit,
     onToggleActive: (Long, Boolean) -> Unit,
+    onReorder: (List<Long>) -> Unit,
 ) {
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var showAddForm by remember { mutableStateOf(false) }
     var filterType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    val filtered = categories.filter { it.type == filterType }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
@@ -1662,7 +1708,7 @@ private fun CategoryManagementSheet(
                 SegmentedButton(selected = filterType == TransactionType.EXPENSE, onClick = { filterType = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
                 SegmentedButton(selected = filterType == TransactionType.INCOME, onClick = { filterType = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
             }
-            categories.filter { it.type == filterType }.forEach { category ->
+            filtered.forEachIndexed { index, category ->
                 ListItem(
                     headlineContent = { Text("${category.icon} ${category.name}") },
                     supportingContent = {
@@ -1671,6 +1717,20 @@ private fun CategoryManagementSheet(
                     },
                     trailingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                TextButton(
+                                    onClick = { onReorder(filtered.toMutableList().also { it.swap(index, index - 1) }.map { it.id }) },
+                                    enabled = index > 0,
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.height(20.dp).width(28.dp),
+                                ) { Text("▲", fontSize = 10.sp) }
+                                TextButton(
+                                    onClick = { onReorder(filtered.toMutableList().also { it.swap(index, index + 1) }.map { it.id }) },
+                                    enabled = index < filtered.lastIndex,
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.height(20.dp).width(28.dp),
+                                ) { Text("▼", fontSize = 10.sp) }
+                            }
                             TextButton(onClick = { editingCategory = category }) { Text("編輯") }
                             Switch(checked = category.isActive, onCheckedChange = { onToggleActive(category.id, it) })
                         }
@@ -1881,6 +1941,7 @@ private val chartPalette = listOf(
     Color(0xFF386A20), Color(0xFF8C4A00), Color(0xFF31628E), Color(0xFF6E5A00),
 )
 private fun chartColors(count: Int): List<Color> = List(count) { chartPalette[it % chartPalette.size] }
+private fun accountColor(colorIndex: Int): Color = chartPalette[colorIndex.mod(chartPalette.size)]
 
 private val monthLabelFormatter = DateTimeFormatter.ofPattern("yyyy年MM月", Locale.TAIWAN)
 private fun monthLabel(month: LocalDate): String = month.format(monthLabelFormatter)
