@@ -401,12 +401,28 @@ private fun TransactionListItem(row: TransactionRow, showDate: Boolean = true, o
             )
         },
         supportingContent = {
-            Text(
-                row.note.ifBlank { "${row.categoryIcon} ${row.categoryName}" },
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column {
+                if (row.note.isNotBlank()) {
+                    Text(
+                        row.note,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = RoundedCornerShape(4.dp), color = accountColor(row.accountColorIndex)) {
+                        Text(
+                            row.accountName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text("${row.categoryIcon} ${row.categoryName}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
         },
         trailingContent = {
             val prefix = if (row.type == TransactionType.EXPENSE) "-" else "+"
