@@ -673,26 +673,6 @@ private fun TransactionSheet(
                 )
             }
             item {
-            ExposedDropdownMenuBox(expanded = categoryMenuExpanded, onExpandedChange = { categoryMenuExpanded = it }) {
-                OutlinedTextField(
-                    value = filteredCategories.firstOrNull { it.id == categoryId }?.let { "${it.icon} ${it.name}" } ?: "",
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("分類") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                )
-                ExposedDropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
-                    filteredCategories.forEach { category ->
-                        DropdownMenuItem(
-                            text = { Text("${category.icon} ${category.name}") },
-                            onClick = { categoryId = category.id; categoryMenuExpanded = false },
-                        )
-                    }
-                }
-            }
-            }
-            item {
             ExposedDropdownMenuBox(expanded = accountMenuExpanded, onExpandedChange = { accountMenuExpanded = it }) {
                 OutlinedTextField(
                     value = accounts.firstOrNull { it.id == accountId }
@@ -708,6 +688,26 @@ private fun TransactionSheet(
                         DropdownMenuItem(
                             text = { Text("${account.name}（${accountTypeLabel(account.type)}）") },
                             onClick = { accountId = account.id; accountMenuExpanded = false },
+                        )
+                    }
+                }
+            }
+            }
+            item {
+            ExposedDropdownMenuBox(expanded = categoryMenuExpanded, onExpandedChange = { categoryMenuExpanded = it }) {
+                OutlinedTextField(
+                    value = filteredCategories.firstOrNull { it.id == categoryId }?.let { "${it.icon} ${it.name}" } ?: "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("分類") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
+                    filteredCategories.forEach { category ->
+                        DropdownMenuItem(
+                            text = { Text("${category.icon} ${category.name}") },
+                            onClick = { categoryId = category.id; categoryMenuExpanded = false },
                         )
                     }
                 }
