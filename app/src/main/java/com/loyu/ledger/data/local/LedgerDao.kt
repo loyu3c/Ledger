@@ -66,14 +66,22 @@ interface LedgerDao {
     @Query("DELETE FROM debts WHERE id = :id")
     suspend fun deleteDebt(id: Long)
 
-    @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id")
+    @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY sortOrder, id")
     fun observeAccounts(): Flow<List<AccountEntity>>
 
-    @Query("SELECT * FROM accounts ORDER BY isActive DESC, id")
+    @Query("SELECT * FROM accounts ORDER BY isActive DESC, sortOrder, id")
     fun observeAllAccounts(): Flow<List<AccountEntity>>
 
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun getAccount(id: Long): AccountEntity?
+
+    @Query("UPDATE accounts SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun setAccountSortOrder(id: Long, sortOrder: Int)
+
+    @Transaction
+    suspend fun reorderAccounts(orderedIds: List<Long>) {
+        orderedIds.forEachIndexed { index, id -> setAccountSortOrder(id, index) }
+    }
 
     @Query("SELECT * FROM categories WHERE isActive = 1 ORDER BY sortOrder, id")
     fun observeCategories(): Flow<List<CategoryEntity>>
@@ -84,6 +92,14 @@ interface LedgerDao {
     @Query("SELECT * FROM categories WHERE id = :id")
     suspend fun getCategory(id: Long): CategoryEntity?
 
+    @Query("UPDATE categories SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun setCategorySortOrder(id: Long, sortOrder: Int)
+
+    @Transaction
+    suspend fun reorderCategories(orderedIds: List<Long>) {
+        orderedIds.forEachIndexed { index, id -> setCategorySortOrder(id, index) }
+    }
+
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getTransaction(id: Long): TransactionEntity?
 
@@ -93,7 +109,7 @@ interface LedgerDao {
     @Query(
         """
         SELECT t.id, t.type, t.amount, t.accountId, t.categoryId, t.merchant, t.note, t.occurredAt,
-               a.name AS accountName, c.name AS categoryName, c.icon AS categoryIcon
+               a.name AS accountName, a.colorIndex AS accountColorIndex, c.name AS categoryName, c.icon AS categoryIcon
         FROM transactions t
         JOIN accounts a ON a.id = t.accountId
         JOIN categories c ON c.id = t.categoryId
@@ -105,7 +121,7 @@ interface LedgerDao {
     @Query(
         """
         SELECT t.id, t.type, t.amount, t.accountId, t.categoryId, t.merchant, t.note, t.occurredAt,
-               a.name AS accountName, c.name AS categoryName, c.icon AS categoryIcon
+               a.name AS accountName, a.colorIndex AS accountColorIndex, c.name AS categoryName, c.icon AS categoryIcon
         FROM transactions t
         JOIN accounts a ON a.id = t.accountId
         JOIN categories c ON c.id = t.categoryId

@@ -91,16 +91,20 @@ class LedgerViewModel(
         viewModelScope.launch { repository.deleteTransaction(id) }
     }
 
-    fun addAccount(name: String, type: AccountType, openingBalance: Long) {
-        viewModelScope.launch { repository.addAccount(name, type, openingBalance) }
+    fun addAccount(name: String, type: AccountType, openingBalance: Long, colorIndex: Int) {
+        viewModelScope.launch { repository.addAccount(name, type, openingBalance, colorIndex) }
     }
 
-    fun updateAccount(id: Long, name: String, type: AccountType, openingBalance: Long) {
-        viewModelScope.launch { repository.updateAccount(id, name, type, openingBalance) }
+    fun updateAccount(id: Long, name: String, type: AccountType, openingBalance: Long, colorIndex: Int) {
+        viewModelScope.launch { repository.updateAccount(id, name, type, openingBalance, colorIndex) }
     }
 
     fun setAccountActive(id: Long, isActive: Boolean) {
         viewModelScope.launch { repository.setAccountActive(id, isActive) }
+    }
+
+    fun reorderAccounts(orderedIds: List<Long>) {
+        viewModelScope.launch { repository.reorderAccounts(orderedIds) }
     }
 
     fun addCategory(name: String, type: TransactionType, icon: String) {
@@ -109,6 +113,10 @@ class LedgerViewModel(
 
     fun updateCategory(id: Long, name: String, type: TransactionType, icon: String) {
         viewModelScope.launch { repository.updateCategory(id, name, type, icon) }
+    }
+
+    fun reorderCategories(orderedIds: List<Long>) {
+        viewModelScope.launch { repository.reorderCategories(orderedIds) }
     }
 
     fun setCategoryActive(id: Long, isActive: Boolean) {

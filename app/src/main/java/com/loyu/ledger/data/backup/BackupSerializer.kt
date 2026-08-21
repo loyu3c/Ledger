@@ -41,6 +41,8 @@ object BackupSerializer {
                             put("type", it.type.name)
                             put("openingBalance", it.openingBalance)
                             put("isActive", it.isActive)
+                            put("sortOrder", it.sortOrder)
+                            put("colorIndex", it.colorIndex)
                         }
                     )
                 }
@@ -121,6 +123,8 @@ object BackupSerializer {
                     type = AccountType.valueOf(o.getString("type")),
                     openingBalance = o.optLong("openingBalance", 0),
                     isActive = o.optBoolean("isActive", true),
+                    sortOrder = o.optInt("sortOrder", 0),
+                    colorIndex = o.optInt("colorIndex", 0),
                 )
             }
         }
