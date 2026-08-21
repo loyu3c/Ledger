@@ -33,6 +33,7 @@ interface LedgerDao {
     @Query("DELETE FROM accounts") suspend fun deleteAllAccounts()
     @Query("DELETE FROM categories") suspend fun deleteAllCategories()
     @Query("DELETE FROM debts") suspend fun deleteAllDebts()
+    @Query("DELETE FROM ignored_invoices") suspend fun deleteAllIgnoredInvoices()
 
     @Transaction
     suspend fun replaceAllData(
@@ -55,6 +56,7 @@ interface LedgerDao {
     suspend fun clearTransactionsAndDebts() {
         deleteAllTransactions()
         deleteAllDebts()
+        deleteAllIgnoredInvoices()
     }
 
     @Query("SELECT * FROM debts ORDER BY isSettled ASC, occurredAt DESC")

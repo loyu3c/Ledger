@@ -206,7 +206,7 @@ class LedgerRepository(private val dao: LedgerDao) {
         dao.replaceAllData(data.accounts, data.categories, data.transactions, data.debts)
     }
 
-    /** Wipes all transactions and debts, leaving accounts, categories, and other settings untouched. */
+    /** Wipes all transactions, debts, and the invoice-import dedup history, leaving accounts, categories, and other settings untouched. */
     suspend fun clearTransactionsAndDebts() {
         dao.clearTransactionsAndDebts()
     }
