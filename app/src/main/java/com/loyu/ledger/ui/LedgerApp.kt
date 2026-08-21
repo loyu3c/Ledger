@@ -687,7 +687,8 @@ private fun TransactionSheet(
             var accountMenuExpanded by remember { mutableStateOf(false) }
             ExposedDropdownMenuBox(expanded = accountMenuExpanded, onExpandedChange = { accountMenuExpanded = it }) {
                 OutlinedTextField(
-                    value = accounts.firstOrNull { it.id == accountId }?.name ?: "",
+                    value = accounts.firstOrNull { it.id == accountId }
+                        ?.let { "${it.name}（${accountTypeLabel(it.type)}）" } ?: "",
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("帳戶") },
@@ -697,7 +698,7 @@ private fun TransactionSheet(
                 ExposedDropdownMenu(expanded = accountMenuExpanded, onDismissRequest = { accountMenuExpanded = false }) {
                     accounts.forEach { account ->
                         DropdownMenuItem(
-                            text = { Text(account.name) },
+                            text = { Text("${account.name}（${accountTypeLabel(account.type)}）") },
                             onClick = { accountId = account.id; accountMenuExpanded = false },
                         )
                     }
