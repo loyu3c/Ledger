@@ -665,20 +665,42 @@ private fun TransactionSheet(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
-            Text("分類", fontWeight = FontWeight.SemiBold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                filteredCategories.forEach { category ->
-                    FilterChip(
-                        selected = categoryId == category.id,
-                        onClick = { categoryId = category.id },
-                        label = { Text("${category.icon} ${category.name}") },
-                    )
+            var categoryMenuExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = categoryMenuExpanded, onExpandedChange = { categoryMenuExpanded = it }) {
+                OutlinedTextField(
+                    value = filteredCategories.firstOrNull { it.id == categoryId }?.let { "${it.icon} ${it.name}" } ?: "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("分類") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
+                    filteredCategories.forEach { category ->
+                        DropdownMenuItem(
+                            text = { Text("${category.icon} ${category.name}") },
+                            onClick = { categoryId = category.id; categoryMenuExpanded = false },
+                        )
+                    }
                 }
             }
-            Text("帳戶", fontWeight = FontWeight.SemiBold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                accounts.forEach { account ->
-                    FilterChip(selected = accountId == account.id, onClick = { accountId = account.id }, label = { Text(account.name) })
+            var accountMenuExpanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = accountMenuExpanded, onExpandedChange = { accountMenuExpanded = it }) {
+                OutlinedTextField(
+                    value = accounts.firstOrNull { it.id == accountId }?.name ?: "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("帳戶") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountMenuExpanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(expanded = accountMenuExpanded, onDismissRequest = { accountMenuExpanded = false }) {
+                    accounts.forEach { account ->
+                        DropdownMenuItem(
+                            text = { Text(account.name) },
+                            onClick = { accountId = account.id; accountMenuExpanded = false },
+                        )
+                    }
                 }
             }
             OutlinedTextField(value = merchant, onValueChange = { merchant = it }, label = { Text("商家 / 對象（選填）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
