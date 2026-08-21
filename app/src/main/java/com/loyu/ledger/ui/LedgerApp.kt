@@ -593,6 +593,8 @@ private fun TransactionSheet(
         mutableStateOf(existing?.categoryId?.takeIf { id -> filteredCategories.any { it.id == id } } ?: filteredCategories.firstOrNull()?.id)
     }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var accountMenuExpanded by remember { mutableStateOf(false) }
 
     val speechLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val spokenText = result.data
@@ -618,16 +620,15 @@ private fun TransactionSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(
-            Modifier.fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth()
                 .imePadding()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
+                .padding(horizontal = 20.dp),
+            contentPadding = PaddingValues(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(if (existing == null) "新增記帳" else "編輯記帳", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { Text(if (existing == null) "新增記帳" else "編輯記帳", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+            item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
                         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -647,25 +648,31 @@ private fun TransactionSheet(
                 OutlinedButton(onClick = { showInvoiceScanner = true }, modifier = Modifier.weight(1f)) {
                     Text("📷 掃發票")
                 }
+            } }
+            item {
+                OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("日期：${formatDateOnly(occurredAtMillis)}")
+                }
             }
-            OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("日期：${formatDateOnly(occurredAtMillis)}")
+            item {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SegmentedButton(selected = type == TransactionType.EXPENSE, onClick = { type = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
+                    SegmentedButton(selected = type == TransactionType.INCOME, onClick = { type = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
+                }
             }
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(selected = type == TransactionType.EXPENSE, onClick = { type = TransactionType.EXPENSE }, shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("支出") }
-                SegmentedButton(selected = type == TransactionType.INCOME, onClick = { type = TransactionType.INCOME }, shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("收入") }
+            item {
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { amountText = it.filter(Char::isDigit) },
+                    label = { Text("金額") },
+                    prefix = { Text("NT$ ") },
+                    trailingIcon = { IconButton(onClick = { showCalculator = true }) { Text("🧮") } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
             }
-            OutlinedTextField(
-                value = amountText,
-                onValueChange = { amountText = it.filter(Char::isDigit) },
-                label = { Text("金額") },
-                prefix = { Text("NT$ ") },
-                trailingIcon = { IconButton(onClick = { showCalculator = true }) { Text("🧮") } },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            var categoryMenuExpanded by remember { mutableStateOf(false) }
+            item {
             ExposedDropdownMenuBox(expanded = categoryMenuExpanded, onExpandedChange = { categoryMenuExpanded = it }) {
                 OutlinedTextField(
                     value = filteredCategories.firstOrNull { it.id == categoryId }?.let { "${it.icon} ${it.name}" } ?: "",
@@ -684,7 +691,8 @@ private fun TransactionSheet(
                     }
                 }
             }
-            var accountMenuExpanded by remember { mutableStateOf(false) }
+            }
+            item {
             ExposedDropdownMenuBox(expanded = accountMenuExpanded, onExpandedChange = { accountMenuExpanded = it }) {
                 OutlinedTextField(
                     value = accounts.firstOrNull { it.id == accountId }
@@ -703,21 +711,27 @@ private fun TransactionSheet(
                         )
                     }
                 }
+            } }
+            item {
+                OutlinedTextField(value = merchant, onValueChange = { merchant = it }, label = { Text("商家 / 對象（選填）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             }
-            OutlinedTextField(value = merchant, onValueChange = { merchant = it }, label = { Text("商家 / 對象（選填）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("備註（選填）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (onDelete != null) {
-                    OutlinedButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.weight(1f)) { Text("刪除") }
+            item {
+                OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("備註（選填）") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (onDelete != null) {
+                        OutlinedButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.weight(1f)) { Text("刪除") }
+                    }
+                    Button(
+                        onClick = {
+                            val amount = amountText.toLongOrNull() ?: return@Button
+                            onSave(type, amount, accountId ?: return@Button, categoryId ?: return@Button, merchant, note, occurredAtMillis)
+                        },
+                        enabled = (amountText.toLongOrNull() ?: 0) > 0 && accountId != null && categoryId != null,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("儲存") }
                 }
-                Button(
-                    onClick = {
-                        val amount = amountText.toLongOrNull() ?: return@Button
-                        onSave(type, amount, accountId ?: return@Button, categoryId ?: return@Button, merchant, note, occurredAtMillis)
-                    },
-                    enabled = (amountText.toLongOrNull() ?: 0) > 0 && accountId != null && categoryId != null,
-                    modifier = Modifier.weight(1f),
-                ) { Text("儲存") }
             }
         }
     }
