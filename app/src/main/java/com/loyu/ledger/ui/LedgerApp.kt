@@ -1978,6 +1978,7 @@ private fun CategoryPieChart(
 private val chartPalette = listOf(
     Color(0xFF6750A4), Color(0xFF00696D), Color(0xFFB3261E), Color(0xFF7D5260),
     Color(0xFF386A20), Color(0xFF8C4A00), Color(0xFF31628E), Color(0xFF6E5A00),
+    Color(0xFF728A28), Color(0xFF288A4A), Color(0xFF28358A), Color(0xFF87288A),
 )
 private fun chartColors(count: Int): List<Color> = List(count) { chartPalette[it % chartPalette.size] }
 private fun accountColor(colorIndex: Int): Color = chartPalette[colorIndex.mod(chartPalette.size)]
