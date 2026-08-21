@@ -1417,18 +1417,33 @@ private fun DebtManagementSheet(
 
     debtPendingSettle?.let { debt ->
         var settleAccountId by remember(debt.id) { mutableStateOf(accounts.firstOrNull()?.id) }
+        var settleAccountMenuExpanded by remember(debt.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { debtPendingSettle = null },
             title = { Text("標記已還") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (debt.direction == DebtDirection.LEND) "錢收回哪個帳戶？" else "從哪個帳戶還款？")
                     if (accounts.isEmpty()) {
+                        Text(if (debt.direction == DebtDirection.LEND) "錢收回哪個帳戶？" else "從哪個帳戶還款？")
                         Text("請先到設定新增一個帳戶。", style = MaterialTheme.typography.bodySmall)
                     } else {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            accounts.forEach { account ->
-                                FilterChip(selected = settleAccountId == account.id, onClick = { settleAccountId = account.id }, label = { Text(account.name) })
+                        ExposedDropdownMenuBox(expanded = settleAccountMenuExpanded, onExpandedChange = { settleAccountMenuExpanded = it }) {
+                            OutlinedTextField(
+                                value = accounts.firstOrNull { it.id == settleAccountId }
+                                    ?.let { "${it.name}（${accountTypeLabel(it.type)}）" } ?: "",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(if (debt.direction == DebtDirection.LEND) "錢收回哪個帳戶？" else "從哪個帳戶還款？") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = settleAccountMenuExpanded) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                            )
+                            ExposedDropdownMenu(expanded = settleAccountMenuExpanded, onDismissRequest = { settleAccountMenuExpanded = false }) {
+                                accounts.forEach { account ->
+                                    DropdownMenuItem(
+                                        text = { Text("${account.name}（${accountTypeLabel(account.type)}）") },
+                                        onClick = { settleAccountId = account.id; settleAccountMenuExpanded = false },
+                                    )
+                                }
                             }
                         }
                     }
@@ -1463,6 +1478,7 @@ private fun DebtFormDialog(
     var occurredAtMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
     var accountId by remember(accounts) { mutableStateOf(accounts.firstOrNull()?.id) }
+    var accountMenuExpanded by remember { mutableStateOf(false) }
     val counterpartySuggestions = remember(counterparty, knownCounterparties) {
         if (counterparty.isBlank()) emptyList()
         else knownCounterparties.filter { it.contains(counterparty, ignoreCase = true) && it != counterparty }
@@ -1516,13 +1532,26 @@ private fun DebtFormDialog(
             OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("日期：${formatDateOnly(occurredAtMillis)}")
             }
-            Text(if (direction == DebtDirection.LEND) "從哪個帳戶付出去" else "錢收進哪個帳戶", fontWeight = FontWeight.SemiBold)
             if (accounts.isEmpty()) {
                 Text("請先到設定新增一個帳戶。", style = MaterialTheme.typography.bodySmall)
             } else {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    accounts.forEach { account ->
-                        FilterChip(selected = accountId == account.id, onClick = { accountId = account.id }, label = { Text(account.name) })
+                ExposedDropdownMenuBox(expanded = accountMenuExpanded, onExpandedChange = { accountMenuExpanded = it }) {
+                    OutlinedTextField(
+                        value = accounts.firstOrNull { it.id == accountId }
+                            ?.let { "${it.name}（${accountTypeLabel(it.type)}）" } ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(if (direction == DebtDirection.LEND) "從哪個帳戶付出去" else "錢收進哪個帳戶") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountMenuExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    )
+                    ExposedDropdownMenu(expanded = accountMenuExpanded, onDismissRequest = { accountMenuExpanded = false }) {
+                        accounts.forEach { account ->
+                            DropdownMenuItem(
+                                text = { Text("${account.name}（${accountTypeLabel(account.type)}）") },
+                                onClick = { accountId = account.id; accountMenuExpanded = false },
+                            )
+                        }
                     }
                 }
             }
