@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main", "claude/loyuledger-android-app-9xa8dp" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
