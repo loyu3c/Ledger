@@ -2041,45 +2041,103 @@ private fun applyCalculatorKey(expression: String, key: String): String = when (
     "C" -> ""
     "⌫" -> if (expression.isNotEmpty()) expression.dropLast(1) else expression
     "+", "−", "×", "÷" -> when {
-        expression.isEmpty() -> expression
+        expression.isEmpty() || expression.last() == '(' -> expression
         expression.last() in calculatorOperators -> expression.dropLast(1) + key
         else -> expression + key
     }
+    "(" -> when {
+        expression.isEmpty() || expression.last() in calculatorOperators || expression.last() == '(' -> expression + key
+        else -> expression
+    }
+    ")" -> {
+        val lastChar = expression.lastOrNull()
+        val hasUnclosedOpen = expression.count { it == '(' } > expression.count { it == ')' }
+        if (hasUnclosedOpen && lastChar != null && (lastChar.isDigit() || lastChar == ')')) expression + key else expression
+    }
     else -> {
-        val currentSegment = expression.substring(expression.indexOfLast { it in calculatorOperators } + 1)
-        if (currentSegment.length >= 12 || expression.length >= 40) expression else expression + key
+        if (expression.lastOrNull() == ')') {
+            expression
+        } else {
+            val boundary = maxOf(
+                expression.indexOfLast { it in calculatorOperators },
+                expression.indexOfLast { it == '(' },
+            )
+            val currentSegment = expression.substring(boundary + 1)
+            if (currentSegment.length >= 12 || expression.length >= 40) expression else expression + key
+        }
     }
 }
 
-/** Evaluates a +-×÷ expression built from [applyCalculatorKey] presses, honoring ×÷ before +−. Returns null while incomplete or invalid (e.g. divide by zero). */
-private fun evaluateCalculatorExpression(expression: String): Long? {
-    if (expression.isEmpty() || expression.last() in calculatorOperators) return null
+private fun tokenizeCalculatorExpression(expression: String): List<String>? {
     val tokens = mutableListOf<String>()
     val current = StringBuilder()
     for (c in expression) {
-        if (c in calculatorOperators) {
-            tokens.add(current.toString()); current.clear()
-            tokens.add(c.toString())
-        } else current.append(c)
-    }
-    tokens.add(current.toString())
-    if (tokens.any { it.isEmpty() }) return null
-
-    val reduced = mutableListOf(tokens[0].toDoubleOrNull() ?: return null)
-    var i = 1
-    while (i < tokens.size) {
-        val op = tokens[i]
-        val value = tokens.getOrNull(i + 1)?.toDoubleOrNull() ?: return null
-        if (op == "×" || op == "÷") {
-            val prev = reduced.removeAt(reduced.size - 1)
-            if (op == "÷" && value == 0.0) return null
-            reduced.add(if (op == "×") prev * value else prev / value)
-        } else {
-            reduced.add(if (op == "+") value else -value)
+        when {
+            c in calculatorOperators || c == '(' || c == ')' -> {
+                if (current.isNotEmpty()) { tokens.add(current.toString()); current.clear() }
+                tokens.add(c.toString())
+            }
+            c.isDigit() -> current.append(c)
+            else -> return null
         }
-        i += 2
     }
-    return Math.round(reduced.sum())
+    if (current.isNotEmpty()) tokens.add(current.toString())
+    return tokens
+}
+
+/** Recursive-descent parser for +-×÷() expressions built from [applyCalculatorKey] presses, honoring ×÷ before +− and parentheses over both. */
+private class CalculatorExpressionParser(private val tokens: List<String>) {
+    private var pos = 0
+    private fun peek(): String? = tokens.getOrNull(pos)
+
+    fun parse(): Double? {
+        val value = parseExpr() ?: return null
+        return if (pos == tokens.size) value else null
+    }
+
+    private fun parseExpr(): Double? {
+        var value = parseTerm() ?: return null
+        while (peek() == "+" || peek() == "−") {
+            val op = tokens[pos]; pos++
+            val rhs = parseTerm() ?: return null
+            value = if (op == "+") value + rhs else value - rhs
+        }
+        return value
+    }
+
+    private fun parseTerm(): Double? {
+        var value = parseFactor() ?: return null
+        while (peek() == "×" || peek() == "÷") {
+            val op = tokens[pos]; pos++
+            val rhs = parseFactor() ?: return null
+            if (op == "÷" && rhs == 0.0) return null
+            value = if (op == "×") value * rhs else value / rhs
+        }
+        return value
+    }
+
+    private fun parseFactor(): Double? = when (val tok = peek()) {
+        "(" -> {
+            pos++
+            val value = parseExpr() ?: return null
+            if (peek() != ")") return null
+            pos++
+            value
+        }
+        null -> null
+        else -> {
+            pos++
+            tok.toDoubleOrNull()
+        }
+    }
+}
+
+/** Evaluates a +-×÷() expression built from [applyCalculatorKey] presses. Returns null while incomplete or invalid (e.g. unmatched parens, divide by zero). */
+private fun evaluateCalculatorExpression(expression: String): Long? {
+    if (expression.isEmpty()) return null
+    val tokens = tokenizeCalculatorExpression(expression) ?: return null
+    val result = CalculatorExpressionParser(tokens).parse() ?: return null
+    return Math.round(result)
 }
 
 @Composable
@@ -2099,7 +2157,7 @@ private fun CalculatorKeypad(expression: String, onExpressionChange: (String) ->
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (expression.any { it in calculatorOperators } && amount != null) {
+                if (expression.any { it in calculatorOperators || it == '(' } && amount != null) {
                     Text("= ${money(amount)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (amount != null && amount <= 0) {
@@ -2108,10 +2166,10 @@ private fun CalculatorKeypad(expression: String, onExpressionChange: (String) ->
             }
         }
         listOf(
+            listOf("(", ")", "C", "⌫"),
             listOf("7", "8", "9", "÷"),
             listOf("4", "5", "6", "×"),
             listOf("1", "2", "3", "−"),
-            listOf("C", "0", "⌫", "+"),
         ).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { key ->
@@ -2119,6 +2177,14 @@ private fun CalculatorKeypad(expression: String, onExpressionChange: (String) ->
                         Text(key, style = MaterialTheme.typography.titleMedium)
                     }
                 }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { onExpressionChange(applyCalculatorKey(expression, "0")) }, modifier = Modifier.weight(3f)) {
+                Text("0", style = MaterialTheme.typography.titleMedium)
+            }
+            OutlinedButton(onClick = { onExpressionChange(applyCalculatorKey(expression, "+")) }, modifier = Modifier.weight(1f)) {
+                Text("+", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
