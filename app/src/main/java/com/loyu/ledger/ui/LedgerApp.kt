@@ -2045,7 +2045,10 @@ private fun applyCalculatorKey(expression: String, key: String): String = when (
         expression.last() in calculatorOperators -> expression.dropLast(1) + key
         else -> expression + key
     }
-    else -> if (expression.length >= 12) expression else expression + key
+    else -> {
+        val currentSegment = expression.substring(expression.indexOfLast { it in calculatorOperators } + 1)
+        if (currentSegment.length >= 12) expression else expression + key
+    }
 }
 
 /** Evaluates a +-×÷ expression built from [applyCalculatorKey] presses, honoring ×÷ before +−. Returns null while incomplete or invalid (e.g. divide by zero). */
