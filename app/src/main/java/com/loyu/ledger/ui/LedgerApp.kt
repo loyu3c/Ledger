@@ -2047,7 +2047,7 @@ private fun applyCalculatorKey(expression: String, key: String): String = when (
     }
     else -> {
         val currentSegment = expression.substring(expression.indexOfLast { it in calculatorOperators } + 1)
-        if (currentSegment.length >= 12) expression else expression + key
+        if (currentSegment.length >= 12 || expression.length >= 40) expression else expression + key
     }
 }
 
@@ -2097,9 +2097,13 @@ private fun CalculatorKeypad(expression: String, onExpressionChange: (String) ->
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (expression.any { it in calculatorOperators } && amount != null) {
                     Text("= ${money(amount)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (amount != null && amount <= 0) {
+                    Text("金額需大於 0 才能帶入", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
             }
         }
