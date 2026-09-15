@@ -23,11 +23,13 @@ class MainActivity : ComponentActivity() {
     // singleTask launchMode reuses this Activity instance across repeated shares (see onNewIntent),
     // so the shared Uri lives in Compose state rather than a local val captured once in onCreate.
     private val sharedInvoiceCsvUri = mutableStateOf<Uri?>(null)
+    private val voiceAddRequest = mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as LedgerApplication
         sharedInvoiceCsvUri.value = extractSharedCsvUri(intent)
+        voiceAddRequest.value = extractVoiceAddRequest(intent)
         setContent {
             val vm: LedgerViewModel = viewModel(factory = LedgerViewModel.Factory(app.repository, app.settingsRepository))
             val themeMode by vm.themeMode.collectAsState()
@@ -41,7 +43,7 @@ class MainActivity : ComponentActivity() {
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
             }
             LoyuLedgerTheme(themeMode = themeMode) {
-                LedgerApp(vm, sharedInvoiceCsvUri = sharedInvoiceCsvUri.value)
+                LedgerApp(vm, sharedInvoiceCsvUri = sharedInvoiceCsvUri.value, launchVoiceInput = voiceAddRequest.value)
             }
         }
     }
@@ -50,6 +52,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         sharedInvoiceCsvUri.value = extractSharedCsvUri(intent)
+        voiceAddRequest.value = extractVoiceAddRequest(intent)
+    }
+
+    companion object {
+        /** Custom action used by the "語音記帳" app shortcut (res/xml/shortcuts.xml) and the pinned-shortcut button in Settings. */
+        const val ACTION_VOICE_ADD = "com.loyu.ledger.ACTION_VOICE_ADD"
     }
 }
 
@@ -57,4 +65,15 @@ class MainActivity : ComponentActivity() {
 private fun extractSharedCsvUri(intent: Intent?): Uri? {
     if (intent?.action != Intent.ACTION_SEND) return null
     return IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+}
+
+/**
+ * Lets the "語音記帳" shortcut open straight into the add-transaction sheet with voice input
+ * already started. Returns a distinct value per call (rather than a plain Boolean) so repeated
+ * taps re-trigger even while the app is already in front, since singleTask reuses this Activity
+ * instance via onNewIntent instead of recreating it.
+ */
+private fun extractVoiceAddRequest(intent: Intent?): Long? {
+    if (intent?.action != MainActivity.ACTION_VOICE_ADD) return null
+    return System.nanoTime()
 }
