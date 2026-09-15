@@ -1,0 +1,4 @@
+<resources>
+    <string name="shortcut_voice_short_label">語音記帳</string>
+    <string name="shortcut_voice_long_label">語音記一筆</string>
+</resources>

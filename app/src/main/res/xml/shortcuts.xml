@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="voice_add"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_voice"
+        android:shortcutShortLabel="@string/shortcut_voice_short_label"
+        android:shortcutLongLabel="@string/shortcut_voice_long_label">
+        <intent
+            android:action="com.loyu.ledger.ACTION_VOICE_ADD"
+            android:targetPackage="com.loyu.ledger"
+            android:targetClass="com.loyu.ledger.MainActivity" />
+    </shortcut>
+</shortcuts>

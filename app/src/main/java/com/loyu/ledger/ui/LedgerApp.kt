@@ -39,6 +39,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
+import com.loyu.ledger.MainActivity
+import com.loyu.ledger.R
 import com.loyu.ledger.data.local.AccountEntity
 import com.loyu.ledger.data.local.AccountNet
 import com.loyu.ledger.data.local.AccountType
@@ -69,7 +74,7 @@ private enum class ViewMode { LIST, CALENDAR }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
+fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null, launchVoiceInput: Long? = null) {
     val accounts by vm.accounts.collectAsState()
     val allAccounts by vm.allAccounts.collectAsState()
     val accountNet by vm.accountNet.collectAsState()
@@ -96,6 +101,14 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
         if (sharedInvoiceCsvUri != null) {
             pendingSharedInvoiceCsvUri = sharedInvoiceCsvUri
             showImportInvoices = true
+        }
+    }
+    var pendingAutoVoice by remember { mutableStateOf(false) }
+    LaunchedEffect(launchVoiceInput) {
+        if (launchVoiceInput != null) {
+            editingRow = null
+            showAdd = true
+            pendingAutoVoice = true
         }
     }
     var showDebts by remember { mutableStateOf(false) }
@@ -232,7 +245,7 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
             accounts = accounts,
             categories = categories,
             existing = editing,
-            onDismiss = { showAdd = false; editingRow = null },
+            onDismiss = { showAdd = false; editingRow = null; pendingAutoVoice = false },
             onSave = { type, amount, accountId, categoryId, merchant, note, occurredAt ->
                 if (editing != null) {
                     vm.updateTransaction(editing.id, type, amount, accountId, categoryId, merchant, note, occurredAt)
@@ -241,15 +254,19 @@ fun LedgerApp(vm: LedgerViewModel, sharedInvoiceCsvUri: Uri? = null) {
                 }
                 showAdd = false
                 editingRow = null
+                pendingAutoVoice = false
             },
             onDelete = if (editing != null) {
                 {
                     vm.deleteTransaction(editing.id)
                     showAdd = false
                     editingRow = null
+                    pendingAutoVoice = false
                 }
             } else null,
             onVoiceInput = { text -> vm.parseVoiceTransaction(text, categories.map { it.name }) },
+            autoStartVoice = editing == null && pendingAutoVoice,
+            onAutoStartVoiceConsumed = { pendingAutoVoice = false },
         )
     }
 
@@ -575,6 +592,8 @@ private fun TransactionSheet(
     onSave: (TransactionType, Long, Long, Long, String, String, Long) -> Unit,
     onDelete: (() -> Unit)?,
     onVoiceInput: suspend (String) -> VoiceTransactionResult?,
+    autoStartVoice: Boolean = false,
+    onAutoStartVoiceConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -619,6 +638,26 @@ private fun TransactionSheet(
         }
     }
 
+    fun launchVoiceRecognition() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-TW")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "說出這筆記帳的內容")
+        }
+        if (intent.resolveActivity(context.packageManager) != null) {
+            speechLauncher.launch(intent)
+        } else {
+            Toast.makeText(context, "找不到可用的語音輸入服務", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (autoStartVoice) {
+            onAutoStartVoiceConsumed()
+            launchVoiceRecognition()
+        }
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(
             modifier = Modifier.fillMaxWidth()
@@ -630,18 +669,7 @@ private fun TransactionSheet(
             item { Text(if (existing == null) "新增記帳" else "編輯記帳", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
             item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = {
-                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-TW")
-                            putExtra(RecognizerIntent.EXTRA_PROMPT, "說出這筆記帳的內容")
-                        }
-                        if (intent.resolveActivity(context.packageManager) != null) {
-                            speechLauncher.launch(intent)
-                        } else {
-                            Toast.makeText(context, "找不到可用的語音輸入服務", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = { launchVoiceRecognition() },
                     enabled = !voiceProcessing,
                     modifier = Modifier.weight(1f),
                 ) { Text(if (voiceProcessing) "辨識中…" else "🎤 語音輸入") }
@@ -869,6 +897,32 @@ private fun SettingsSheet(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Button(onClick = { onSaveApiKey(apiKey.trim()) }, modifier = Modifier.align(Alignment.End)) { Text("儲存") }
+            }
+
+            HorizontalDivider()
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("快速捷徑", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "在桌面加一個「語音記帳」捷徑，點下去直接打開新增記帳頁面並開始收音，不用先開 App 再點語音輸入。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                    onClick = {
+                        val shortcut = ShortcutInfoCompat.Builder(context, "voice_add")
+                            .setShortLabel(context.getString(R.string.shortcut_voice_short_label))
+                            .setLongLabel(context.getString(R.string.shortcut_voice_long_label))
+                            .setIcon(IconCompat.createWithResource(context, R.drawable.ic_shortcut_voice))
+                            .setIntent(Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_VOICE_ADD))
+                            .build()
+                        if (ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
+                            ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
+                        } else {
+                            Toast.makeText(context, "這台裝置的桌面不支援直接加入捷徑，可改用長按 App 圖示", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("加入桌面捷徑") }
             }
 
             HorizontalDivider()
