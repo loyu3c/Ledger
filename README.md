@@ -28,6 +28,13 @@
 5. 月份切換
 6. 基本統計圖表
 
+## 下載與驗證
+
+最新版 APK：<https://github.com/loyu3c/Ledger/releases/latest/download/youyu-ledger.apk>
+
+每個 Release 都附上 APK 的 SHA-256、簽章憑證指紋與 GitHub 建置證明（`gh attestation verify youyu-ledger.apk --repo loyu3c/Ledger`）。
+發布方式：遞增 `versionCode`、修改 `versionName` 後推送同名標籤（例如 `v0.1.0`），`.github/workflows/release.yml` 會自動建置並建立 Release。
+
 ## 開啟方式
 使用新版 Android Studio 開啟專案根目錄，等待 Gradle Sync 後執行 `app`。
 

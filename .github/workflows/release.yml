@@ -1,0 +1,84 @@
+name: Release APK
+# Push a tag like v0.1.0 (must match versionName in app/build.gradle.kts) to publish a public GitHub Release
+# with the release-signed APK, its SHA-256 checksum, the signing certificate fingerprint and a build attestation.
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Check tag matches versionName
+        run: |
+          set -eu
+          ver=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
+          [ "v$ver" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME does not match versionName $ver"; exit 1; }
+          echo "VERSION_NAME=$ver" >> "$GITHUB_ENV"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.4.1'
+
+      - name: Build release APK
+        env:
+          KEYSTORE_DATA: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -eu
+          if [ -z "$KEYSTORE_DATA" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "::error::Release signing Secrets are not configured."
+            exit 1
+          fi
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/ledger-release.jks"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$KEYSTORE_DATA" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          gradle assembleRelease
+
+      - name: Checksum and signing certificate
+        run: |
+          set -eu
+          mkdir dist
+          cp app/build/outputs/apk/release/app-release.apk dist/youyu-ledger.apk
+          cd dist
+          sha256sum youyu-ledger.apk > SHA256SUMS.txt
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner
+          "$apksigner" verify --print-certs youyu-ledger.apk | tee certs.txt
+          cert=$(sed -n 's/.*certificate SHA-256 digest: //p' certs.txt | head -1 | sed 's/../&:/g; s/:$//' | tr a-f A-F)
+          sha=$(cut -d' ' -f1 SHA256SUMS.txt)
+          cat > ../notes.md <<NOTES
+          有魚記帳 ${VERSION_NAME}
+
+          **下載**：下方 Assets 的 \`youyu-ledger.apk\`（Android 8.0 以上）
+
+          **驗證檔案**
+          - APK SHA-256：\`${sha}\`
+          - 簽章憑證 SHA-256：\`${cert}\`
+          - GitHub 建置證明：\`gh attestation verify youyu-ledger.apk --repo ${GITHUB_REPOSITORY}\`
+          NOTES
+          rm certs.txt
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/youyu-ledger.apk
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/youyu-ledger.apk dist/SHA256SUMS.txt --title "有魚記帳 ${VERSION_NAME}" --notes-file notes.md --repo "$GITHUB_REPOSITORY"

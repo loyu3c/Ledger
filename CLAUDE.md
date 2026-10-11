@@ -13,6 +13,7 @@
 - **開發階段的合併節奏**:目前專案還在開發階段,一個功能改完、CI 建置驗證通過後,**直接開 PR 並合併到 `main`,不需要每次都停下來問使用者要不要合併**。使用者的測試方式是合併後自己去 GitHub Actions 下載 APK 裝到手機上測,所以盡快合併讓最新版本可以下載反而是使用者要的節奏。真的需要暫停確認的情況只有:改動有明顯風險或不確定使用者是否要這個方向時。
 - **批次交付**:使用者提過「往返測試的頻率太高」,所以拿到一批功能待辦時,盡量一次做完多個小功能(各自 commit)後再一起請使用者下載測試,不要做完一個小功能就馬上打斷使用者。真的卡住或方向不確定時才中途詢問。
 - **Debug 簽章金鑰已固定**:`debug.keystore`(commit 在 repo 根目錄)+ `app/build.gradle.kts` 裡的 `signingConfigs { named("debug") {...} }`。原因:CI 每次都是全新機器,若不固定簽章金鑰,AGP 會每次自動產生新的隨機 debug 金鑰,導致使用者每次安裝新版 APK 都要先移除舊版(簽章不一致無法覆蓋安裝)。**不要刪除或忽略這個 keystore 檔案**,它只是本機測試用、非正式上架金鑰,不是敏感機密。
+- **公開發布用正式金鑰**:對外下載的版本走 `.github/workflows/release.yml`(推送 `v<versionName>` 標籤觸發),以 GitHub Secrets 裡的正式金鑰(`ANDROID_KEYSTORE_BASE64`/`ANDROID_KEYSTORE_PASSWORD`/`ANDROID_KEY_ALIAS`/`ANDROID_KEY_PASSWORD`)簽署 release APK,建立 GitHub Release 並附 SHA-256 與建置證明。`debug.keystore` 只給 main 的 debug 測試建置用,公開的 debug 金鑰不能拿來簽對外版本。每次發布前要遞增 `versionCode` 並改 `versionName`。
 - **語音輸入是「無 AI」原則的唯一例外**:新增記帳頁面的語音輸入按鈕,會呼叫使用者自己申請的 Groq API(`GroqClient.kt`)做語意解析,自動判斷分類/金額/商家/備註。這是使用者明確要求的選配功能,金鑰只存在裝置本機 `SharedPreferences`(`SettingsRepository.kt`),不會內建或上傳。沒有設定金鑰、或呼叫失敗時,會靜默降級成把辨識文字塞進備註欄。除此功能外,App 其餘部分維持 local-first、無雲端、無 AI。
 - **不要任意刪除或調整原本就有的功能、版型**:使用者明確要求過,只改他當次請求的部分。如果實作過程中發現需要動到既有功能或畫面配置(例如某個修改會連帶影響到其他既有元件的顯示方式),要先停下來詢問使用者,不要自行決定刪除或調整。
 

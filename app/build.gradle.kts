@@ -26,6 +26,22 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // Public releases are signed with a private key kept in GitHub Secrets
+        // (see .github/workflows/release.yml); it is never committed.
+        System.getenv("ANDROID_KEYSTORE_PATH")?.let { path ->
+            create("release") {
+                storeFile = file(path)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
     }
 
     buildFeatures { compose = true }
